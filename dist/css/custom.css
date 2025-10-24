@@ -1,0 +1,290 @@
+/* 
+ * Custom CSS - Estilos personalizados para el sistema
+ * Mejoras visuales para el sidebar y componentes
+ */
+
+/* ===== MEJORAS PARA EL SIDEBAR ===== */
+
+/* Container principal del sidebar mejorado */
+.main-sidebar {
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Brand link mejorado */
+.brand-link {
+  border-bottom: 1px solid #4a5568;
+  padding: 0.8rem 1rem;
+}
+
+.brand-link.logo-switch {
+  background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+}
+
+/* Panel de usuario mejorado */
+.user-panel.user-lg {
+  padding: 1rem;
+  border-bottom: 1px solid #4a5568;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.user-panel .image img {
+  border: 3px solid #4a5568;
+  transition: border-color 0.3s ease;
+}
+
+.user-panel .image img:hover {
+  border-color: #007bff;
+}
+
+/* LÍNEA SEPARADORA ENTRE MÓDULOS - Como en la imagen */
+.nav-sidebar .nav-header {
+  color: #a0aec0 !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  padding: 1rem 1rem 0.5rem 1rem !important;
+  margin-top: 0.5rem !important;
+  border-top: 1px solid #4a5568 !important;
+  position: relative !important;
+}
+
+/* Quitar borde superior del primer módulo */
+.nav-sidebar .nav-header:first-child {
+  border-top: none !important;
+  margin-top: 0 !important;
+}
+
+/* Items del menú con mejor diseño */
+.nav-sidebar .nav-item {
+  position: relative;
+}
+
+.nav-sidebar .nav-item > .nav-link {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-left: 3px solid transparent;
+}
+
+/* Efecto activo mejorado */
+.nav-sidebar .nav-item > .nav-link.active {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d3748 100%) !important;
+  border-left-color: #007bff;
+  box-shadow: inset 0 0 20px rgba(0, 123, 255, 0.1);
+  transform: translateX(2px);
+}
+
+.nav-sidebar .nav-item > .nav-link.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 3px;
+  background: #007bff;
+}
+
+/* Efecto hover con profundidad */
+.nav-sidebar .nav-item > .nav-link:hover {
+  background-color: #2d3748 !important;
+  border-left-color: #63b3ed;
+  transform: translateX(3px);
+}
+
+/* Submenús con diseño moderno */
+.nav-treeview {
+  background: rgba(0, 0, 0, 0.2);
+  margin: 0;
+  border-left: 1px solid #4a5568;
+}
+
+.nav-treeview .nav-link {
+  position: relative;
+  transition: all 0.2s ease;
+  border-left: 2px solid transparent;
+  font-size: 0.9rem;
+}
+
+.nav-treeview .nav-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-left-color: #63b3ed;
+  padding-left: 3rem;
+}
+
+.nav-treeview .nav-link.active {
+  background: rgba(0, 123, 255, 0.15);
+  border-left-color: #007bff;
+  color: #ffffff !important;
+}
+
+/* Iconos con mejor consistencia */
+.nav-sidebar .nav-icon {
+  transition: transform 0.2s ease;
+}
+
+.nav-sidebar .nav-link:hover .nav-icon {
+  transform: scale(1.1);
+}
+
+/* Flechas del menú con animación */
+.nav-arrow {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.7;
+}
+
+.nav-item.menu-open .nav-arrow {
+  transform: rotate(90deg);
+  opacity: 1;
+}
+
+.nav-link:hover .nav-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+/* ===== MEJORAS GENERALES ===== */
+
+/* Mejoras para cards */
+.card {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e3e6f0;
+  transition: box-shadow 0.3s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Botones mejorados */
+.btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Mejoras para tablas */
+.table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.table thead th {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  font-weight: 600;
+}
+
+/* Mejoras para formularios */
+.form-control {
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  transition: all 0.2s ease;
+}
+
+.form-control:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+/* Mejoras para alerts */
+.alert {
+  border-radius: 8px;
+  border: none;
+  font-weight: 500;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .main-sidebar {
+    box-shadow: none;
+  }
+  
+  .nav-sidebar .nav-item > .nav-link {
+    padding: 0.8rem 0.6rem;
+  }
+  
+  .brand-link {
+    padding: 0.6rem 0.8rem;
+  }
+  
+  .nav-sidebar .nav-header {
+    padding: 0.8rem 0.8rem 0.4rem 0.8rem !important;
+  }
+}
+
+/* ===== UTILIDADES ===== */
+.text-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.shadow-custom {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.border-gradient {
+  border: 2px solid;
+  border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
+}
+
+/* ============================================================
+   OVERRIDES ENTERPRISE (se aplican al final, no mover arriba)
+   - Ancho de sidebar
+   - Activo negro con texto/icono blanco
+   - Flecha .right alineada y rotación al abrir
+   - Separadores y sticky de "Cerrar Sesión"
+   ============================================================ */
+
+/* Sidebar ancho tipo enterprise */
+:root { --sbw: 280px; } /* Ajusta a gusto: 260–300px */
+.main-sidebar, .main-sidebar::before { width: var(--sbw) !important; }
+.brand-link, .main-sidebar .brand-link { width: var(--sbw) !important; }
+.content-wrapper, .main-header, .main-footer { margin-left: var(--sbw) !important; }
+
+/* Scroll para que siempre se alcance "Cerrar Sesión" */
+.main-sidebar .sidebar { height: calc(100vh - 4rem); overflow-y: auto; }
+
+/* Item activo negro con texto blanco */
+.nav-sidebar > .nav-item.menu-open > .nav-link,
+.nav-sidebar .nav-link.active {
+  background:#111 !important; color:#fff !important;
+}
+.nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
+  background:#1b1b1b !important; color:#fff !important;
+}
+
+/* Íconos en blanco cuando el item está activo */
+.nav-sidebar .nav-link.active .nav-icon,
+.nav-sidebar > .nav-item.menu-open > .nav-link .nav-icon {
+  color:#fff !important;
+}
+
+/* Hover más visible */
+.nav-sidebar .nav-link:hover { background:#2a2a2a !important; color:#fff !important; }
+
+/* Flecha (clase .right de AdminLTE) alineada y rotación al abrir */
+.nav-sidebar .nav-link p{
+  display:flex; align-items:center; justify-content:space-between; width:100%;
+}
+.nav-sidebar .nav-link .right { opacity:.9; transition: transform .15s ease; }
+.nav-item.menu-open > .nav-link .right { transform: rotate(-90deg); }
+
+/* Separadores entre módulos (nivel 1) */
+.nav-sidebar > .nav-item { border-bottom:1px solid rgba(255,255,255,.15); }
+
+/* "Cerrar Sesión" fijo abajo */
+.nav-logout { position: sticky; bottom: 0; background:#0e0e0e; z-index: 1; }
+.nav-logout .nav-link { border-top:1px solid rgba(255,255,255,.15); }
+
+/* Estado colapsado estándar */
+.sidebar-mini.sidebar-collapse .main-sidebar { width:4.6rem !important; }
+.sidebar-mini.sidebar-collapse .content-wrapper,
+.sidebar-mini.sidebar-collapse .main-header,
+.sidebar-mini.sidebar-collapse .main-footer { margin-left:4.6rem !important; }
