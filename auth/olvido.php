@@ -6,6 +6,7 @@
 if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
 require_once __DIR__ . '/../config/connection.php';
 
+
 const DEBUG_SHOW_LINK   = true;   // pon false en producción
 const RESET_TOKEN_TTL   = 120;    // 120 segundos (2 min)
 
@@ -43,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       VALUES
         (:id, :h, NOW(), :exp, :ip, :ua)
     ");
-    $ins->execute([
+    $ins->execute([ // token de restablecimiento de contraseña
       ':id'  => (int)$user['id'],
       ':h'   => $hash,
       ':exp' => $expiraDT,
