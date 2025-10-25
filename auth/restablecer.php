@@ -1,3 +1,4 @@
+//sistema de restablecimiento de contraseña
 <?php
 // auth/restablecer.php
 // Valida token, pide nueva contraseña y la guarda con password_hash().
