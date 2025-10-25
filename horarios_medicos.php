@@ -242,8 +242,8 @@ $(function(){
     $('#btnFiltrar').on('click', render);
     $('#btnNuevo').on('click', ()=> abrirHorario());
     $('#btnAusencia').on('click', ()=> $('#modalAusencia').modal('show'));
-    $('#btnPrint').on('click', ()=> window.print());
-    $('#btnPdf').on('click', ()=> window.print());
+    $('#btnPrint').on('click', imprimirHorarios);
+    $('#btnPdf').on('click', exportarPDF);
 
     // Submits
     $('#frmHorario').on('submit', guardarHorario);
@@ -526,6 +526,45 @@ $(function(){
         Swal.fire({icon:'error',title:'Error',text:r && r.message ? r.message : 'No se pudo guardar'});
       }
     }).fail(()=> Swal.fire({icon:'error',title:'Error de conexión'}));
+  }
+
+  // ==== IMPRIMIR SOLO HORARIOS ACTIVOS ====
+  function imprimirHorarios(){
+    // Crear ventana de impresión con solo la tabla
+    const ventana = window.open('', '_blank');
+    const contenido = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Horarios Activos - Sanatorio La Esperanza</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #2c3e50; text-align: center; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f2f2f2; }
+          .no-data { text-align: center; color: #666; padding: 20px; }
+        </style>
+      </head>
+      <body>
+        <h1>Horarios Activos - Sanatorio La Esperanza</h1>
+        ${$('.table-responsive').html()}
+        <div style="text-align: center; margin-top: 20px; color: #666;">
+          Generado el ${new Date().toLocaleDateString()}
+        </div>
+      </body>
+      </html>
+    `;
+    
+    ventana.document.write(contenido);
+    ventana.document.close();
+    ventana.print();
+    ventana.close();
+  }
+
+  function exportarPDF(){
+    // Por ahora usamos la misma función que imprimir
+    imprimirHorarios();
   }
 
   // ==== Utils ====
