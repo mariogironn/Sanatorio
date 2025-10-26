@@ -115,10 +115,9 @@ try{
 <script>
   showMenuSelected("#mnu_users", "#mi_users_roles");
 
-  //inicializacion de datablese para gestion de roles
   $(function(){
     $("#tbl_roles").DataTable({
-      responsive: true,v //hace la tabla adaptable a dispositivos moviles
+      responsive: true,
       language: {
         decimal: "",
         emptyTable: "No hay datos disponibles en la tabla",
