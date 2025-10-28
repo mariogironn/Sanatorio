@@ -303,9 +303,6 @@ function renderFila(r){
     <td>${r.dosis}</td>
     <td>${r.sucursal || 'No especificada'}</td>
     <td class="text-center action-buttons">
-      <button class="btn btn-info btn-sm btn-historial" data-id="${r.detalle_id}" title="Ver Detalles">
-        <i class="fas fa-eye"></i>
-      </button>
       <button class="btn btn-warning btn-sm btn-edit" 
         data-toggle="modal" data-target="#modalEdit"
         data-det="${r.detalle_id}" data-pid="${r.prescripcion_id}"
