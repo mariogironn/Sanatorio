@@ -72,7 +72,7 @@ try {
           <div class="row">
             <div class="col-md-12">
               <div class="form-group">
-                <label>Paciente *</label>
+                <label>Buscar Paciente</label>
                 <select id="paciente_id" class="form-control" required>
                   <option value="">Selecciona un paciente</option>
                   <?= $optPacientes ?>
@@ -93,22 +93,9 @@ try {
       <div id="resumenPaciente" class="card patient-summary" style="display:none;">
         <div class="card-body">
           <div class="row">
-            <div class="col-md-6">
+            <div class="col-md-12">
               <h5 class="mb-1"><i class="fas fa-user"></i> <span id="nombrePacienteCompleto"></span></h5>
               <p class="mb-1"><strong>Sucursal Principal:</strong> <span id="sucursalPaciente"></span></p>
-            </div>
-            <div class="col-md-6 text-right">
-              <div class="btn-group">
-                <button id="btnVerPrescripciones" class="btn btn-light btn-sm">
-                  <i class="fas fa-prescription"></i> Ver Prescripciones
-                </button>
-                <button id="btnVerEnfermedades" class="btn btn-light btn-sm">
-                  <i class="fas fa-disease"></i> Historial Enfermedades
-                </button>
-                <button id="btnVerVisitas" class="btn btn-light btn-sm">
-                  <i class="fas fa-calendar-alt"></i> Historial Visitas
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -121,7 +108,10 @@ try {
           <div>
             <span class="badge badge-primary mr-2" id="contadorRegistros">0 registros</span>
             <button id="btnExportar" class="btn btn-outline-secondary btn-sm" style="display:none;">
-              <i class="fas fa-download"></i> Exportar
+              <i class="fas fa-file-excel"></i> Excel
+            </button>
+            <button id="btnExportarPDF" class="btn btn-outline-secondary btn-sm" style="display:none;">
+              <i class="fas fa-file-pdf"></i> PDF
             </button>
           </div>
         </div>
@@ -285,6 +275,9 @@ try {
 <?php include './config/data_tables_js.php'; ?>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- jsPDF + AutoTable para PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js"></script>
 
 <script>
 // === JS COMPLETO CON TODAS LAS FUNCIONALIDADES ===
@@ -331,14 +324,12 @@ function cargarHistorial(){
   $('#tablaHistorial tbody').html('<tr><td colspan="9" class="text-center"><i class="fas fa-spinner fa-spin"></i> Cargando historial...</td></tr>');
   
   // LLAMADA SIMPLIFICADA - sin filtros de fecha ni sucursal
-  $.getJSON('ajax/buscar_historial_paciente.php', { 
-    paciente_id: pid
-  })
+  $.getJSON('ajax/buscar_historial_paciente.php', { paciente_id: pid })
     .done(res=>{
       if(!res.success || !res.rows || res.rows.length === 0){ 
         $('#tablaHistorial tbody').html('<tr><td colspan="9" class="text-center text-muted">No se encontraron registros</td></tr>');
         $('#contadorRegistros').text('0 registros');
-        $('#btnExportar').hide();
+        $('#btnExportar, #btnExportarPDF').hide();
         
         // Aún así mostrar resumen del paciente si hay datos
         if(res.paciente_info){
@@ -350,7 +341,7 @@ function cargarHistorial(){
       const html = res.rows.map(renderFila).join('');
       $('#tablaHistorial tbody').html(html);
       $('#contadorRegistros').text(res.rows.length + ' registro(s)');
-      $('#btnExportar').show();
+      $('#btnExportar, #btnExportarPDF').show();
       
       // Mostrar información del paciente
       if(res.rows[0]){
@@ -388,33 +379,69 @@ function resetearInterfaz() {
   $('#tablaHistorial tbody').html(''); 
   $('#resumenPaciente').hide();
   $('#btnRevisionHistorial').hide();
-  $('#btnExportar').hide();
+  $('#btnExportar, #btnExportarPDF').hide();
   $('#contadorRegistros').text('0 registros');
 }
 
-// === FUNCIÓN PARA EXPORTAR A EXCEL ===
+// === EXCEL ===
 function exportarAExcel() {
   const tabla = document.getElementById('tablaHistorial');
   const paciente = $('#nombrePacienteCompleto').text() || 'Paciente';
   const fecha = new Date().toISOString().split('T')[0];
   
-  // Crear una copia de la tabla sin los botones de acción
+  // Clonar y quitar última columna (Acciones)
   const tablaClone = tabla.cloneNode(true);
   const filasAccion = tablaClone.querySelectorAll('th:last-child, td:last-child');
   filasAccion.forEach(celda => celda.remove());
   
-  // Convertir a hoja de cálculo
   const wb = XLSX.utils.table_to_book(tablaClone, {sheet: "Historial"});
-  
-  // Descargar archivo
   XLSX.writeFile(wb, `Historial_${paciente}_${fecha}.xlsx`);
+}
+
+// === PDF ===
+function exportarAPdf() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('l', 'pt', 'letter'); // landscape, puntos, tamaño carta
+  
+  const paciente = $('#nombrePacienteCompleto').text() || 'Paciente';
+  const fecha = new Date().toISOString().substring(0,10);
+  
+  // Título
+  doc.setFontSize(14);
+  doc.text(`Historial del Paciente — ${paciente}`, 40, 40);
+  doc.setFontSize(10);
+  doc.text(`Fecha de exportación: ${fecha}`, 40, 58);
+  
+  // Construir headers y filas excluyendo la última columna (Acciones)
+  const headers = Array.from(document.querySelectorAll('#tablaHistorial thead th'))
+                  .map(th => th.innerText.trim()).slice(0, -1);
+  const body = Array.from(document.querySelectorAll('#tablaHistorial tbody tr')).map(tr => {
+    return Array.from(tr.querySelectorAll('td')).slice(0, -1).map(td => td.innerText.trim());
+  });
+  
+  doc.autoTable({
+    head: [headers],
+    body,
+    startY: 75,
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: [102,126,234], textColor: 255 },
+    didDrawPage: (data) => {
+      // Footer simple
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      doc.setFontSize(9);
+      doc.text('SANATORIO LA ESPERANZA', pageWidth - 180, pageHeight - 20);
+    }
+  });
+  
+  doc.save(`Historial_${paciente}_${fecha}.pdf`);
 }
 
 // === FUNCIÓN PARA ELIMINAR REGISTRO ===
 function eliminarRegistro(detalleId) {
   Swal.fire({
     title: '¿Estás seguro?',
-    text: "¡No podrás revertir esta acción!",
+    text: "No podrás revertir esta acción.",
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#d33',
@@ -428,14 +455,11 @@ function eliminarRegistro(detalleId) {
           try {
             const res = JSON.parse(response);
             if (res.success) {
-              Swal.fire('¡Eliminado!', 'El registro ha sido eliminado.', 'success');
+              Swal.fire('Eliminado', 'El registro ha sido eliminado.', 'success');
               $(`#row-${detalleId}`).remove();
-              // Actualizar contador
               const count = $('#tablaHistorial tbody tr').length;
               $('#contadorRegistros').text(count + ' registro(s)');
-              if (count === 0) {
-                $('#btnExportar').hide();
-              }
+              if (count === 0) { $('#btnExportar, #btnExportarPDF').hide(); }
             } else {
               Swal.fire('Error', res.message || 'No se pudo eliminar el registro', 'error');
             }
@@ -443,77 +467,39 @@ function eliminarRegistro(detalleId) {
             Swal.fire('Error', 'Error al procesar la respuesta', 'error');
           }
         })
-        .fail(function() {
-          Swal.fire('Error', 'Error de conexión', 'error');
-        });
+        .fail(function() { Swal.fire('Error', 'Error de conexión', 'error'); });
     }
   });
 }
 
-// === FUNCIÓN PARA VER DETALLES ===
+// === DETALLE ===
 function verDetalles(detalleId) {
-  // Aquí puedes redirigir a una página de detalles o mostrar un modal
   window.location.href = `ver_detalle_historial.php?id=${detalleId}`;
 }
 
-// === FUNCIONALIDADES DE LOS BOTONES DEL RESUMEN ===
-function verPrescripciones() {
-  if(pacienteSeleccionado) {
-    window.location.href = `prescripciones_paciente.php?id=${pacienteSeleccionado}`;
-  }
-}
+// === Funcionalidades de botones del resumen (se mantienen por compatibilidad) ===
+function verPrescripciones(){ if(pacienteSeleccionado){ window.location.href = `prescripciones_paciente.php?id=${pacienteSeleccionado}`; } }
+function verEnfermedades(){ if(pacienteSeleccionado){ window.location.href = `historial_enfermedades.php?id=${pacienteSeleccionado}`; } }
+function verVisitas(){ if(pacienteSeleccionado){ window.location.href = `historial_visitas.php?id=${pacienteSeleccionado}`; } }
 
-function verEnfermedades() {
-  if(pacienteSeleccionado) {
-    window.location.href = `historial_enfermedades.php?id=${pacienteSeleccionado}`;
-  }
-}
-
-function verVisitas() {
-  if(pacienteSeleccionado) {
-    window.location.href = `historial_visitas.php?id=${pacienteSeleccionado}`;
-  }
-}
-
-// Event Listeners
+// Listeners
 $('#btnBuscar').on('click', cargarHistorial);
-$('#paciente_id').on('change', function(){
-  if($(this).val()) cargarHistorial();
-});
+$('#paciente_id').on('change', function(){ if($(this).val()) cargarHistorial(); });
+$('#btnLimpiar').on('click', function(){ $('#paciente_id').val(''); resetearInterfaz(); });
 
-$('#btnLimpiar').on('click', function(){
-  $('#paciente_id').val('');
-  resetearInterfaz();
-});
-
-// Botón Revisión de Historial
 $('#btnRevisionHistorial').on('click', function(e) {
-  if(!pacienteSeleccionado) {
-    e.preventDefault();
-    Swal.fire('Aviso', 'Primero selecciona un paciente', 'warning');
-  }
+  if(!pacienteSeleccionado) { e.preventDefault(); Swal.fire('Aviso', 'Primero selecciona un paciente', 'warning'); }
 });
 
-// Botones del resumen - ACTUALIZADOS
-$('#btnVerPrescripciones').on('click', verPrescripciones);
-$('#btnVerEnfermedades').on('click', verEnfermedades);
-$('#btnVerVisitas').on('click', verVisitas);
-
-// Botón Exportar
+// Exportes
 $('#btnExportar').on('click', exportarAExcel);
+$('#btnExportarPDF').on('click', exportarAPdf);
 
-// Delegación de eventos para botones dinámicos
-$(document).on('click', '.btn-historial', function() {
-  const detalleId = $(this).data('id');
-  verDetalles(detalleId);
-});
+// Delegación para acciones dinámicas
+$(document).on('click', '.btn-historial', function() { verDetalles($(this).data('id')); });
+$(document).on('click', '.btn-del', function() { eliminarRegistro($(this).data('det')); });
 
-$(document).on('click', '.btn-del', function() {
-  const detalleId = $(this).data('det');
-  eliminarRegistro(detalleId);
-});
-
-// Editar registro - llenar modal con datos
+// Editar registro
 $(document).on('click', '.btn-edit', function() {
   const $btn = $(this);
   $('#detalle_id_edit').val($btn.data('det'));
@@ -528,17 +514,17 @@ $(document).on('click', '.btn-edit', function() {
   $('#sucursal_id_edit').val($btn.data('sucursal') || '');
 });
 
-// Enviar formulario de edición
+// Guardar edición
 $('#formEdit').on('submit', function(e){
   e.preventDefault();
   const datos = $(this).serialize();
-  $.post('ajax/editar_historial_paciente.php', datos)
+  $.post('ajax/actualizar_historial_paciente.php', datos)
     .done(r=>{
       try{r=JSON.parse(r)}catch(_){}
       if(r.success){
         $('#modalEdit').modal('hide');
         Swal.fire('Éxito','Registro actualizado correctamente','success');
-        cargarHistorial(); // Recargar la tabla
+        cargarHistorial();
       }else{ 
         Swal.fire('Aviso', r.message || 'No se pudo actualizar el registro','warning'); 
       }
@@ -549,10 +535,7 @@ $('#formEdit').on('submit', function(e){
 // Agregar registro
 $('#btnAgregarPrincipal').on('click', function(){
   const pid = $('#paciente_id').val();
-  if(!pid){ 
-    Swal.fire('Aviso','Selecciona un paciente primero','warning'); 
-    return; 
-  }
+  if(!pid){ Swal.fire('Aviso','Selecciona un paciente primero','warning'); return; }
   $('#formAdd')[0].reset();
   $('#paciente_id_add').val(pid);
   $('#modalAdd').modal('show');
@@ -570,7 +553,7 @@ $('#formAdd').on('submit', function(e){
         Swal.fire('Éxito','Registro agregado correctamente','success');
         const count = $('#tablaHistorial tbody tr').length;
         $('#contadorRegistros').text(count + ' registro(s)');
-        $('#btnExportar').show();
+        $('#btnExportar, #btnExportarPDF').show();
       }else{ 
         Swal.fire('Aviso', r.message || 'No se pudo guardar el registro','warning'); 
       }
@@ -578,10 +561,8 @@ $('#formAdd').on('submit', function(e){
     .fail(x=> Swal.fire('Error', x.responseText || 'Fallo al guardar','error'));
 });
 
-// Inicialización
-$(document).ready(function(){
-  // Ya no se establecen fechas por defecto
-});
+// Init
+$(document).ready(function(){});
 </script>
 </body>
 </html>
