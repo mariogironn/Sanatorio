@@ -1,54 +1,121 @@
 <?php
 // index.php (LOGIN)
-// - Valida credenciales con parámetros (PDO prepared statements)
-// - Compatibilidad con contraseñas antiguas en MD5 (rehash automático a password_hash())
-// - Bloquea usuarios en estado != ACTIVO
-// - Carga rol del usuario en $_SESSION['rol_nombre']
-// - Carga permisos efectivos en $_SESSION['permisos']
-//
-// Requisitos previos (una sola vez en la BD):
-//   ALTER TABLE usuarios MODIFY contrasena VARCHAR(255) NOT NULL;
+/**
+ * SISTEMA DE AUTENTICACIÓN Y LOGIN
+ * 
+ * Este script maneja el proceso completo de autenticación de usuarios,
+ * incluyendo verificación de credenciales, migración de hash MD5 a password_hash,
+ * carga de permisos, roles y configuración de sesión.
+ * 
+ * CARACTERÍSTICAS PRINCIPALES:
+ * - Autenticación segura con migración de hash
+ * - Gestión de sesiones robusta
+ * - Carga de permisos y roles
+ * - Configuración de sucursales
+ * - Interfaz moderna con validaciones
+ */
 
+// CONFIGURACIÓN INICIAL Y CONEXIÓN A BD
+/**
+ * Incluye la configuración de conexión a la base de datos
+ */
 include './config/connection.php';
-if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); } // <-- aseguramos sesión
 
+/**
+ * Verifica e inicia la sesión PHP si no está activa
+ * El operador @ suprime posibles warnings de sesión ya iniciada
+ */
+if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
+
+/**
+ * $message: Almacena mensajes de feedback para el usuario
+ */
 $message = '';
 
+// PROCESAMIENTO DEL FORMULARIO DE LOGIN
+/**
+ * Verifica si se envió el formulario de login (botón 'login')
+ */
 if (isset($_POST['login'])) {
+  /**
+   * Obtiene y sanitiza las credenciales del formulario
+   * trim() elimina espacios en blanco al inicio y final del usuario
+   */
   $userName = trim($_POST['user_name'] ?? '');
   $password = $_POST['password'] ?? '';
 
+  // VALIDACIÓN BÁSICA DE CAMPOS OBLIGATORIOS
   if ($userName === '' || $password === '') {
     $message = 'Usuario y contraseña son obligatorios.';
   } else {
-    // 1) Traer usuario y su hash (sin comparar aún)
+    /**
+     * CONSULTA PARA OBTENER DATOS DEL USUARIO
+     * 
+     * Selecciona información crítica del usuario incluyendo:
+     * - Datos básicos de identificación
+     * - Hash de contraseña almacenado
+     * - Estado de la cuenta
+     */
     $sqlUser = "SELECT id, nombre_mostrar, usuario, imagen_perfil, estado, contrasena
                 FROM usuarios
                 WHERE usuario = :u
                 LIMIT 1";
+    
     try {
+      /**
+       * Prepara y ejecuta consulta segura usando parámetros nombrados
+       * para prevenir inyección SQL
+       */
       $stmt = $con->prepare($sqlUser);
       $stmt->execute([':u' => $userName]);
 
+      /**
+       * VERIFICACIÓN DE EXISTENCIA DEL USUARIO
+       * 
+       * Si se encuentra exactamente un usuario, procede con la autenticación
+       */
       if ($stmt->rowCount() === 1) {
         $row    = $stmt->fetch(PDO::FETCH_ASSOC);
         $hashDB = (string)$row['contrasena'];
         $loginOK = false;
 
-        // 2) Compatibilidad: si el hash en BD "parece MD5" (32 hex)
+        /**
+         * SISTEMA DE MIGRACIÓN DE HASH MD5 A PASSWORD_HASH
+         * 
+         * Detecta si la contraseña está almacenada en MD5 (legacy)
+         * y la migra automáticamente a password_hash
+         */
+        
+        // DETECCIÓN DE HASH MD5 (32 caracteres hexadecimales)
         if (preg_match('/^[a-f0-9]{32}$/i', $hashDB)) {
+          /**
+           * Si el hash coincide con MD5, verifica y migra
+           */
           if (md5($password) === $hashDB) {
             $loginOK = true;
-            // Re-hash al formato moderno
+            
+            /**
+             * MIGRACIÓN AUTOMÁTICA A PASSWORD_HASH
+             * 
+             * Genera nuevo hash seguro y actualiza la base de datos
+             */
             $newHash = password_hash($password, PASSWORD_DEFAULT);
             $con->prepare("UPDATE usuarios SET contrasena = :h WHERE id = :id")
                 ->execute([':h' => $newHash, ':id' => (int)$row['id']]);
             $hashDB = $newHash;
           }
         } else {
-          // 3) Ruta moderna: verificar con password_verify()
+          /**
+           * VERIFICACIÓN CON PASSWORD_VERIFY (hash moderno)
+           */
           $loginOK = password_verify($password, $hashDB);
-          // Re-hash si el coste por defecto cambió (mantenimiento)
+          
+          /**
+           * REHASH SI ES NECESARIO
+           * 
+           * Si el hash necesita actualización (algoritmo obsoleto),
+           * genera uno nuevo automáticamente
+           */
           if ($loginOK && password_needs_rehash($hashDB, PASSWORD_DEFAULT)) {
             $newHash = password_hash($password, PASSWORD_DEFAULT);
             $con->prepare("UPDATE usuarios SET contrasena = :h WHERE id = :id")
@@ -56,24 +123,43 @@ if (isset($_POST['login'])) {
           }
         }
 
+        /**
+         * MANEJO DE RESULTADO DE AUTENTICACIÓN
+         */
         if (!$loginOK) {
           $message = 'Usuario o contraseña incorrectos';
         } else {
-          // 4) Validar estado
+          /**
+           * VERIFICACIÓN DE ESTADO DE LA CUENTA
+           * 
+           * Comprueba que la cuenta esté activa antes de permitir el acceso
+           */
           if (!isset($row['estado']) || $row['estado'] !== 'ACTIVO') {
             $message = 'Su cuenta está BLOQUEADA. Contacte al administrador.';
           } else {
-            // 5) Login OK → sesión segura
+            /**
+             * INICIALIZACIÓN SEGURA DE SESIÓN
+             * 
+             * Regenera el ID de sesión para prevenir fixation attacks
+             */
             if (session_status() === PHP_SESSION_ACTIVE) {
               session_regenerate_id(true);
             }
 
+            /**
+             * ALMACENAMIENTO DE DATOS BÁSICOS EN SESIÓN
+             */
             $_SESSION['user_id']        = (int)$row['id'];
             $_SESSION['nombre_mostrar'] = $row['nombre_mostrar'];
             $_SESSION['usuario']        = $row['usuario'];
             $_SESSION['imagen_perfil']  = $row['imagen_perfil'];
 
-            // 6) Rol principal (si existe la vista)
+            /**
+             * CARGA DEL ROL PRINCIPAL DEL USUARIO
+             * 
+             * Consulta la vista que determina el rol principal del usuario
+             * Maneja errores gracefulmente
+             */
             $_SESSION['rol_nombre'] = 'Sin rol';
             try {
               $qr = "SELECT rol_nombre FROM vw_usuario_rol_principal WHERE id_usuario = :id LIMIT 1";
@@ -83,12 +169,16 @@ if (isset($_POST['login'])) {
                 $_SESSION['rol_nombre'] = $r['rol_nombre'] ?: 'Sin rol';
               }
             } catch (PDOException $e) {
-              // Si la vista no existe, no rompemos el login
               $_SESSION['rol_nombre'] = 'Sin rol';
             }
 
-            // 7) Permisos efectivos por módulo (OR entre todos los roles del usuario)
-            $_SESSION['permisos'] = []; // limpia cualquier sesión previa
+            /**
+             * CARGA DE PERMISOS DEL USUARIO
+             * 
+             * Obtiene todos los permisos agrupados por módulo (slug)
+             * Incluye permisos CRUD (ver, crear, actualizar, eliminar)
+             */
+            $_SESSION['permisos'] = [];
             try {
               $qp = "SELECT m.slug,
                             MAX(rp.ver)        AS ver,
@@ -115,7 +205,12 @@ if (isset($_POST['login'])) {
               $_SESSION['permisos'] = [];
             }
 
-            // 8) Sucursales permitidas + sucursal activa (NUEVO)
+            /**
+             * CONFIGURACIÓN DE SUCURSALES
+             * 
+             * Carga las sucursales asignadas al usuario y establece
+             * la sucursal activa por defecto
+             */
             $_SESSION['sucursales_ids']   = [];
             $_SESSION['sucursal_activa']  = 0;
             $_SESSION['id_sucursal_activa'] = 0;
@@ -131,132 +226,582 @@ if (isset($_POST['login'])) {
               $rows = $qs->fetchAll(PDO::FETCH_COLUMN, 0);
               $_SESSION['sucursales_ids'] = array_map('intval', $rows);
 
+              /**
+               * ESTABLECER SUCURSAL ACTIVA POR DEFECTO
+               * 
+               * Toma la primera sucursal de la lista ordenada
+               */
               if (!empty($_SESSION['sucursales_ids'])) {
                 $_SESSION['sucursal_activa']     = (int)$_SESSION['sucursales_ids'][0];
                 $_SESSION['id_sucursal_activa']  = (int)$_SESSION['sucursales_ids'][0];
               }
             } catch (Throwable $e) {
-              // si falla, el header intentará forzar o mostrar texto
+              // Si falla, el header intentará forzar o mostrar texto
+              // El manejo de errores es silencioso para no interrumpir el login
             }
 
-            // 9) Redirige al dashboard
+            /**
+             * REDIRECCIÓN AL DASHBOARD
+             * 
+             * Una vez completada toda la configuración de sesión,
+             * redirige al usuario al dashboard principal
+             */
             header("Location: dashboard.php");
             exit;
           }
         }
       } else {
+        /**
+         * USUARIO NO ENCONTRADO
+         * 
+         * Mensaje genérico para no revelar información sobre usuarios existentes
+         */
         $message = 'Usuario o contraseña incorrectos';
       }
     } catch (PDOException $ex) {
+      /**
+       * ERROR DE CONEXIÓN A BASE DE DATOS
+       * 
+       * Mensaje genérico para no exponer detalles técnicos al usuario
+       */
       $message = 'Error de conexión. Intente más tarde.';
-      // echo $ex->getMessage(); exit;
     }
   }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SANATORIO LA ESPERANZA</title>
-
-  <!-- Google Fonts y Estilos -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
-  <link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css">
-  <link rel="stylesheet" href="dist/css/adminlte.min.css">
+  
+  <!-- INCLUSIÓN DE FONT AWESOME PARA ÍCONOS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- FAVICON DEL SISTEMA -->
   <link rel="shortcut icon" href="./dist/img/La Esperanza.png" type="image/x-icon">
-
+  
   <style>
-    body{
-      background-image: url('dist/img/'); /* o 'login.png' si prefieres */
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
+    /* RESET Y CONFIGURACIONES BASE */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
-    .login-box{ width:430px; }
-    #system-logo{ width:5em; height:5em; object-fit:cover; object-position:center; }
-    .input-icon-container{ position:relative; }
-    .input-icon-container input{ padding-left:40px; padding-right:40px; }
-    .input-icon-left{ position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#999; font-size:1.2rem; pointer-events:none; }
-    .input-icon-right{ position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#999; font-size:1.2rem; cursor:pointer; }
+
+    /* FONDO CON GRADIENTE ANIMADO */
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    /* CONTENEDOR PRINCIPAL DEL LOGIN */
+    .login-container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+      width: 100%;
+      max-width: 420px;
+      overflow: hidden;
+      animation: fadeIn 0.6s ease-out;
+    }
+
+    /* ANIMACIÓN DE ENTRADA SUAVE */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-25px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* CABECERA CON GRADIENTE Y LOGO */
+    .login-header {
+      background: linear-gradient(to right, #4a00e0, #8e2de2);
+      color: white;
+      padding: 30px 25px;
+      text-align: center;
+      position: relative;
+    }
+
+    /* CONTENEDOR DEL LOGO CIRCULAR */
+    .logo-container {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 20px;
+      background: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+      border: 4px solid white;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* IMAGEN DEL LOGO */
+    .logo-container img {
+      width: 85px;
+      height: 85px;
+      object-fit: cover;
+      border-radius: 50%;
+      border: 2px solid #f8f9fa;
+    }
+
+    /* PLACEHOLDER DEL LOGO (si falla la imagen) */
+    .logo-placeholder {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #4a00e0, #8e2de2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 2rem;
+    }
+
+    /* TÍTULO PRINCIPAL */
+    .login-header h1 {
+      font-size: 1.6rem;
+      margin-bottom: 5px;
+      font-weight: 700;
+    }
+
+    /* SUBTÍTULO */
+    .login-header p {
+      font-size: 0.95rem;
+      opacity: 0.9;
+    }
+
+    /* CUERPO DEL FORMULARIO */
+    .login-body {
+      padding: 30px;
+    }
+
+    /* MENSAJE DE BIENVENIDA */
+    .welcome-message {
+      text-align: center;
+      margin-bottom: 25px;
+      color: #333;
+      font-size: 1.1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    /* CORAZÓN LATIENTE (efecto visual médico) */
+    .heart-beat {
+      color: #ff4757;
+      animation: heartBeat 1.5s ease-in-out infinite;
+      font-size: 1.3rem;
+      text-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+    }
+
+    /* ANIMACIÓN DEL LATIDO DEL CORAZÓN */
+    @keyframes heartBeat {
+      0% {
+        transform: scale(1);
+        text-shadow: 0 0 5px rgba(255, 71, 87, 0.5);
+      }
+      15% {
+        transform: scale(1.3);
+        text-shadow: 0 0 15px rgba(255, 71, 87, 0.8);
+      }
+      30% {
+        transform: scale(1);
+        text-shadow: 0 0 5px rgba(255, 71, 87, 0.5);
+      }
+      45% {
+        transform: scale(1.2);
+        text-shadow: 0 0 12px rgba(255, 71, 87, 0.7);
+      }
+      60% {
+        transform: scale(1);
+        text-shadow: 0 0 5px rgba(255, 71, 87, 0.5);
+      }
+      100% {
+        transform: scale(1);
+        text-shadow: 0 0 5px rgba(255, 71, 87, 0.5);
+      }
+    }
+
+    /* GRUPOS DE FORMULARIO */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    /* INPUT CON ÍCONO */
+    .input-with-icon {
+      position: relative;
+    }
+
+    .input-with-icon input {
+      width: 100%;
+      padding: 15px 15px 15px 45px;
+      border: 2px solid #e1e5e9;
+      border-radius: 10px;
+      font-size: 1rem;
+      transition: all 0.3s;
+    }
+
+    .input-with-icon input:focus {
+      border-color: #4a00e0;
+      box-shadow: 0 0 0 3px rgba(74, 0, 224, 0.1);
+      outline: none;
+    }
+
+    /* ÍCONO DENTRO DEL INPUT */
+    .input-icon {
+      position: absolute;
+      left: 15px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #777;
+      font-size: 1.1rem;
+    }
+
+    /* BOTÓN TOGGLE VISIBILIDAD CONTRASEÑA */
+    .toggle-password {
+      position: absolute;
+      right: 15px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: #777;
+      cursor: pointer;
+      font-size: 1.1rem;
+    }
+
+    /* BOTÓN DE LOGIN PRINCIPAL */
+    .btn-login {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: center;
+      background: linear-gradient(to right, #00b09b, #96c93d);
+      color: white;
+      margin-bottom: 15px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-login:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 7px 15px rgba(0, 176, 155, 0.3);
+    }
+
+    /* EFECTO DE BRILLO AL HACER HOVER */
+    .btn-login::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+      transition: 0.5s;
+    }
+
+    .btn-login:hover::before {
+      left: 100%;
+    }
+
+    /* MENSAJES DE ESTADO */
+    .message {
+      padding: 12px 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      text-align: center;
+      font-size: 0.95rem;
+    }
+
+    /* VARIANTE DE MENSAJE DE ERROR */
+    .message-error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    /* SECCIÓN DE ENLACES ADICIONALES */
+    .login-links {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #e9ecef;
+    }
+
+    .login-links a {
+      color: #4a00e0;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+
+    .login-links a:hover {
+      color: #8e2de2;
+      text-decoration: underline;
+    }
+
+    /* PIE DE PÁGINA */
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      font-size: 0.85rem;
+      color: #6c757d;
+    }
+
+    .footer strong {
+      color: #4a00e0;
+    }
+
+    /* DISEÑO RESPONSIVE */
+    @media (max-width: 480px) {
+      .login-container {
+        max-width: 100%;
+      }
+      
+      .login-body {
+        padding: 25px 20px;
+      }
+      
+      .login-header {
+        padding: 25px 20px;
+      }
+      
+      .login-header h1 {
+        font-size: 1.4rem;
+      }
+      
+      .logo-container {
+        width: 90px;
+        height: 90px;
+      }
+      
+      .logo-container img {
+        width: 78px;
+        height: 78px;
+      }
+      
+      .welcome-message {
+        font-size: 1rem;
+      }
+      
+      .heart-beat {
+        font-size: 1.1rem;
+      }
+    }
+
+    /* ANIMACIÓN DE PULSO PARA EL BOTÓN */
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { 
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(0, 176, 155, 0.4);
+      }
+      70% { 
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(0, 176, 155, 0);
+      }
+      100% { 
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(0, 176, 155, 0);
+      }
+    }
+
+    /* EFECTO DE BRILLO INTERMITENTE ADICIONAL */
+    @keyframes glow {
+      0%, 100% {
+        filter: drop-shadow(0 0 5px rgba(255, 71, 87, 0.7));
+      }
+      50% {
+        filter: drop-shadow(0 0 15px rgba(255, 71, 87, 0.9));
+      }
+    }
+
+    .heart-glow {
+      animation: glow 2s ease-in-out infinite;
+    }
   </style>
 </head>
 
-<body class="hold-transition login-page">
-  <div class="login-box">
-    <!-- LOGO -->
-    <div class="login-logo mb-4">
-      <img src="user_images/logo_esperanza.png" class="img-thumbnail p-0 border rounded-circle" id="system-logo" alt="Logo">
-      <div class="text-center h2 mb-0">SANATORIO LA ESPERANZA</div>
-    </div>
-
-    <!-- TARJETA DE LOGIN -->
-    <div class="card card-outline card-primary rounded-0 shadow">
-      <div class="card-body login-card-body">
-        <p class="login-box-msg">BIENVENIDO</p>
-
-        <form method="post" autocomplete="off">
-          <!-- Usuario -->
-          <div class="form-group input-icon-container mb-3">
-            <input type="text" class="form-control form-control-lg rounded-0 autofocus"
-                   placeholder="Ingresa tu usuario" id="user_name" name="user_name" required>
-            <i class="fas fa-user input-icon-left"></i>
-          </div>
-
-          <!-- Contraseña -->
-          <div class="form-group input-icon-container mb-3">
-            <input type="password" class="form-control form-control-lg rounded-0"
-                   placeholder="Ingresa tu contraseña" id="password" name="password" required>
-            <i class="fas fa-lock input-icon-left"></i>
-            <i class="fas fa-eye input-icon-right" id="togglePassword" onclick="togglePasswordVisibility()"></i>
-          </div>
-
-          <!-- Botón Acceso -->
-          <div class="row">
-            <div class="col-12">
-              <button name="login" type="submit" class="btn rounded-0 btn-block"
-                      style="background-color:#2ecc71;color:white;font-weight:bold;border:none;transition:background-color .3s ease;">
-                Acceso
-              </button>
-            </div>
-          </div>
-
-          <!-- Mensaje -->
-          <div class="row mt-2">
-            <div class="col-md-12">
-              <p class="text-danger text-center"><?php if ($message !== '') echo htmlspecialchars($message); ?></p>
-            </div>
-          </div>
-        </form>
-
-        <!-- ===== ENLACES NUEVOS ===== -->
-        <div class="text-center mt-2">
-          <a href="auth/olvido.php">¿Olvidaste tu contraseña?</a><br>
-          <small>¿Necesitas acceso? Contacta al administrador.</small>
+<body>
+  <!-- CONTENEDOR PRINCIPAL DEL LOGIN -->
+  <div class="login-container">
+    <!-- ENCABEZADO CON LOGO Y TÍTULO -->
+    <div class="login-header">
+      <div class="logo-container">
+        <!-- 
+          LOGO PRINCIPAL - CON FALLBACK AUTOMÁTICO
+          Si la imagen no carga, muestra un placeholder con ícono
+        -->
+        <img src="user_images/logo_esperanza.png" alt="Logo Sanatorio La Esperanza" 
+             onerror="this.style.display='none'; document.getElementById('logoPlaceholder').style.display='flex';">
+        <div class="logo-placeholder" id="logoPlaceholder" style="display: none;">
+          <i class="fas fa-hospital"></i>
         </div>
-        <!-- ========================= -->
+      </div>
+      <h1>SANATORIO LA ESPERANZA</h1>
+      <p>Sistema de Control Admin.</p>
+    </div>
+    
+    <!-- CUERPO DEL FORMULARIO -->
+    <div class="login-body">
+      <!-- MENSAJE DE BIENVENIDA CON EFECTO VISUAL MÉDICO -->
+      <div class="welcome-message">
+        <i class="fas fa-heartbeat heart-beat heart-glow"></i> 
+        <span>BIENVENIDO</span>
+      </div>
+
+      <!-- FORMULARIO DE LOGIN -->
+      <form method="post" autocomplete="off">
+        <!-- CAMPO DE USUARIO -->
+        <div class="form-group">
+          <div class="input-with-icon">
+            <i class="fas fa-user input-icon"></i>
+            <input type="text" placeholder="Ingresa tu usuario" id="user_name" name="user_name" required autofocus>
+          </div>
+        </div>
+
+        <!-- CAMPO DE CONTRASEÑA -->
+        <div class="form-group">
+          <div class="input-with-icon">
+            <i class="fas fa-lock input-icon"></i>
+            <input type="password" placeholder="Ingresa tu contraseña" id="password" name="password" required>
+            <!-- BOTÓN TOGGLE VISIBILIDAD -->
+            <button type="button" class="toggle-password" id="togglePassword">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- MENSAJE DE ERROR (si existe) -->
+        <?php if ($message !== ''): ?>
+          <div class="message message-error">
+            <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($message) ?>
+          </div>
+        <?php endif; ?>
+
+        <!-- BOTÓN DE ACCESO PRINCIPAL -->
+        <button type="submit" name="login" class="btn-login pulse">
+          <i class="fas fa-sign-in-alt"></i> ACCESO AL SISTEMA
+        </button>
+      </form>
+
+      <!-- ENLACES ADICIONALES -->
+      <div class="login-links">
+        <!-- ENLACE PARA RECUPERACIÓN DE CONTRASEÑA -->
+        <a href="auth/olvido.php">
+          <i class="fas fa-key"></i> ¿Olvidaste tu contraseña?
+        </a>
+        <br>
+        <!-- INFORMACIÓN ADICIONAL -->
+        <small>¿Necesitas acceso? Contacta al administrador.</small>
+      </div>
+
+      <!-- PIE DE PÁGINA -->
+      <div class="footer">
+        <strong>LA ESPERANZA</strong> © 2025<br>
+        <small>Todos los Derechos Reservados</small>
       </div>
     </div>
   </div>
 
-  <!-- PIE -->
-  <div style="text-align:center;margin-top:40px;font-size:13px;color:black;">
-    <strong style="color:#2c3e50;">LA ESPERANZA</strong> © 2025<br>Todos los Derechos Reservados.
-  </div>
-
+  <!-- SCRIPT DE INTERACTIVIDAD Y VALIDACIONES -->
   <script>
-    function togglePasswordVisibility(){
-      const passwordInput=document.getElementById('password');
-      const toggleIcon=document.getElementById('togglePassword');
-      if(passwordInput.type==='password'){
-        passwordInput.type='text';
-        toggleIcon.classList.remove('fa-eye'); toggleIcon.classList.add('fa-eye-slash');
-      }else{
-        passwordInput.type='password';
-        toggleIcon.classList.remove('fa-eye-slash'); toggleIcon.classList.add('fa-eye');
+    /**
+     * FUNCIONALIDAD TOGGLE VISIBILIDAD DE CONTRASEÑA
+     */
+    document.getElementById('togglePassword').addEventListener('click', function() {
+      const passwordInput = document.getElementById('password');
+      const icon = this.querySelector('i');
+      
+      // ALTERNAR ENTRE TIPO PASSWORD Y TEXT
+      if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+      } else {
+        passwordInput.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
       }
-    }
+    });
+
+    /**
+     * EFECTOS VISUALES EN CAMPOS DE FORMULARIO
+     * Aplica escala suave al enfocar campos
+     */
+    const inputs = document.querySelectorAll('input');
+    inputs.forEach(input => {
+      input.addEventListener('focus', function() {
+        this.parentElement.style.transform = 'scale(1.02)';
+      });
+      
+      input.addEventListener('blur', function() {
+        this.parentElement.style.transform = 'scale(1)';
+      });
+    });
+
+    /**
+     * VALIDACIÓN BÁSICA DEL FORMULARIO EN CLIENTE
+     * Previene envío si campos están vacíos
+     */
+    document.querySelector('form').addEventListener('submit', function(e) {
+      const username = document.getElementById('user_name').value.trim();
+      const password = document.getElementById('password').value;
+      
+      if (!username || !password) {
+        e.preventDefault();
+        alert('Por favor, completa todos los campos');
+      }
+    });
+
+    /**
+     * VERIFICACIÓN DE CARGA DEL LOGO
+     * Si la imagen del logo no carga correctamente, muestra el placeholder
+     */
+    window.addEventListener('load', function() {
+      const logoImg = document.querySelector('.logo-container img');
+      const placeholder = document.getElementById('logoPlaceholder');
+      
+      setTimeout(() => {
+        if (logoImg && logoImg.naturalHeight === 0) {
+          logoImg.style.display = 'none';
+          placeholder.style.display = 'flex';
+        }
+      }, 2000);
+    });
+
+    /**
+     * EFECTO INTERACTIVO EN EL CORAZÓN
+     * Acelera la animación al hacer hover para mayor interactividad
+     */
+    const heart = document.querySelector('.heart-beat');
+    heart.addEventListener('mouseenter', function() {
+      this.style.animation = 'heartBeat 0.8s ease-in-out infinite, glow 1s ease-in-out infinite';
+    });
+    
+    heart.addEventListener('mouseleave', function() {
+      this.style.animation = 'heartBeat 1.5s ease-in-out infinite, glow 2s ease-in-out infinite';
+    });
   </script>
 </body>
 </html>
