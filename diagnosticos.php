@@ -188,19 +188,19 @@ $enfId = (int)($_GET['enfermedad_id'] ?? 0); // Filtro contextual desde Enfermed
       <div class="modal-body">
         <input type="hidden" id="dx_id" name="id">
         <div class="form-group">
-          <label>Paciente *</label>
+          <label>Paciente</label>
           <select id="dx_paciente" name="id_paciente" class="form-control" required></select>
         </div>
         <div class="form-group">
-          <label>Enfermedad *</label>
+          <label>Enfermedad</label>
           <select id="dx_enfermedad" name="id_enfermedad" class="form-control" required></select>
         </div>
         <div class="form-group">
-          <label>Médico *</label>
+          <label>Médico</label>
           <select id="dx_medico" name="id_medico" class="form-control" required></select>
         </div>
         <div class="form-group">
-          <label>Síntomas del Paciente *</label>
+          <label>Síntomas del Paciente</label>
           <textarea id="dx_sintomas" name="sintomas" class="form-control" rows="3" placeholder="Describa los síntomas…" required></textarea>
         </div>
         <div class="form-group">

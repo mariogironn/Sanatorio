@@ -571,14 +571,14 @@ if (isset($_POST['login'])) {
         <small>¿Necesitas acceso? Contacta al administrador.</small>
       </div>
 
-      <!-- Información de Versión -->
+      <!-- Información de Versión en Login --
       <div class="version-info">
         <div class="version-text">
-          <span class="version">Versión Inicial v0.1</span> | 
-          <span class="developer">Desarrollado por Mario Giron</span>
+          <span class="version"></span> | 
+          <span class="developer"></span>
         </div>
       </div>
-
+      -------------------------------------> 
       <!-- Pie de página -->
       <div class="footer">
         <strong>LA ESPERANZA</strong> © 2025<br>
