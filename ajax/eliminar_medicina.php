@@ -4,130 +4,96 @@ if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
 header('Content-Type: application/json; charset=utf-8');
 
 require_once '../config/connection.php';
-require_once '../common_service/auditoria_service.php'; // si no lo usas, puedes comentarlo
 
-$res = ['success'=>false,'message'=>'','id'=>null,'nombre'=>null];
+$res = ['success'=>false,'message'=>'Acción no ejecutada','action'=>null];
 
 try {
-  // ==== Método ====
   if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
     throw new Exception('Método no permitido');
   }
 
-  // ==== Sesión / permisos básicos ====
-  if (empty($_SESSION['user_id'])) {
-    http_response_code(401);
-    throw new Exception('Sesión no válida');
-  }
-  $usuario_id = (int)$_SESSION['user_id'];
-
-  // Roles clínicos
-  $rs = $con->prepare("
-    SELECT LOWER(r.nombre) rol
-    FROM usuario_rol ur
-    JOIN roles r ON r.id_rol = ur.id_rol
-    WHERE ur.id_usuario = :u
-  ");
-  $rs->execute([':u'=>$usuario_id]);
-  $roles = array_map(fn($x)=>$x['rol'], $rs->fetchAll(PDO::FETCH_ASSOC));
-  $esPersonalMedico = (bool) array_intersect($roles, ['medico','doctor','enfermero','enfermera']);
-
-  // Permiso por matriz (eliminar en módulo medicinas/medicamentos)
-  $tienePermisoMatriz = false;
-  $mods = $con->query("SELECT id_modulo FROM modulos WHERE slug IN ('medicinas','medicamentos') OR nombre LIKE '%Medicin%'")
-              ->fetchAll(PDO::FETCH_COLUMN);
-  if ($mods) {
-    $mods = array_map('intval', $mods);
-    $q = $con->prepare("
-      SELECT 1
-      FROM rol_permiso rp
-      JOIN usuario_rol ur ON ur.id_rol = rp.id_rol
-      WHERE ur.id_usuario = :u
-        AND rp.id_modulo IN (".implode(',', $mods).")
-        AND rp.eliminar = 1
-      LIMIT 1
-    ");
-    $q->execute([':u'=>$usuario_id]);
-    $tienePermisoMatriz = (bool)$q->fetchColumn();
-  }
-
-  if (!$esPersonalMedico && !$tienePermisoMatriz) {
-    http_response_code(403);
-    throw new Exception('No autorizado para eliminar medicinas.');
-  }
-
-  // ==== Datos ====
+  // 1) ID
   $id = (int)($_POST['id'] ?? 0);
-  if ($id <= 0) {
-    http_response_code(400);
-    throw new Exception('ID inválido');
-  }
+  if ($id <= 0) { throw new Exception('ID inválido'); }
 
-  // ==== Transacción ====
+  // 2) Existe
+  $st = $con->prepare("SELECT id, estado FROM medicamentos WHERE id = :id FOR UPDATE");
+  $st->execute([':id'=>$id]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) { throw new Exception('La medicina no existe'); }
+
+  // Helper: verificar existencia de tabla
+  $hasTable = function(PDO $con, string $t): bool {
+    $q = $con->prepare("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t");
+    $q->execute([':t'=>$t]);
+    return (int)$q->fetchColumn() > 0;
+  };
+
   $con->beginTransaction();
 
-  // 1) Captura previa + lock
-  $stmt = $con->prepare("SELECT * FROM medicamentos WHERE id = :id FOR UPDATE");
-  $stmt->execute([':id'=>$id]);
-  $prev = $stmt->fetch(PDO::FETCH_ASSOC);
-  if (!$prev) {
-    $con->rollBack();
-    http_response_code(404);
-    throw new Exception('La medicina no existe.');
-  }
-  $res['id']     = $id;
-  $res['nombre'] = (string)$prev['nombre_medicamento'];
+  // 3) Conteo de referencias
+  $refs = 0;
 
-  // 2) Bloquear si tiene asignaciones activas a pacientes
-  $chk = $con->prepare("SELECT COUNT(*) FROM paciente_medicinas WHERE medicina_id = :id AND estado = 'activo'");
-  $chk->execute([':id'=>$id]);
-  if ((int)$chk->fetchColumn() > 0) {
-    $con->rollBack();
-    http_response_code(400);
-    throw new Exception('No se puede eliminar: la medicina tiene pacientes con medicación activa.');
+  // paciente_medicinas
+  if ($hasTable($con,'paciente_medicinas')) {
+    $q = $con->prepare("SELECT COUNT(*) FROM paciente_medicinas WHERE medicina_id = :id_pm");
+    $q->execute([':id_pm'=>$id]);
+    $refs += (int)$q->fetchColumn();
   }
 
-  // 3) Eliminar
-  $del = $con->prepare("DELETE FROM medicamentos WHERE id = :id");
-  $del->execute([':id'=>$id]);
-
-  if ($del->rowCount() < 1) {
-    $con->rollBack();
-    http_response_code(409);
-    throw new Exception('No se pudo eliminar la medicina.');
+  // detalle_recetas
+  if ($hasTable($con,'detalle_recetas')) {
+    $q = $con->prepare("SELECT COUNT(*) FROM detalle_recetas WHERE id_medicamento = :id_dr");
+    $q->execute([':id_dr'=>$id]);
+    $refs += (int)$q->fetchColumn();
   }
 
-  // 4) Auditoría (no rompe si falla)
-  try {
-    audit_delete($con, 'Medicinas', 'medicamentos', $id, $prev);
-  } catch (Throwable $e) {
-    error_log('AUDIT eliminar_medicina: '.$e->getMessage());
+  // detalles_medicina (si existiera con esa ortografía)
+  if ($hasTable($con,'detalles_medicina')) {
+    $q = $con->prepare("SELECT COUNT(*) FROM detalles_medicina WHERE id_medicamento = :id_dm");
+    $q->execute([':id_dm'=>$id]);
+    $refs += (int)$q->fetchColumn();
   }
 
-  $con->commit();
+  // detalle_prescripciones (según tu esquema)
+  if ($hasTable($con,'detalle_prescripciones')) {
+    $q = $con->prepare("SELECT COUNT(*) FROM detalle_prescripciones WHERE id_medicamento = :id_dp");
+    $q->execute([':id_dp'=>$id]);
+    $refs += (int)$q->fetchColumn();
+  }
 
-  $res['success'] = true;
-  $res['message'] = 'Medicina eliminada correctamente';
+  if ($refs > 0) {
+    // 4a) Inactivar si está en uso
+    $u = $con->prepare("UPDATE medicamentos SET estado = 'inactivo', updated_at = NOW() WHERE id = :id_upd");
+    $u->execute([':id_upd'=>$id]);
 
-} catch (PDOException $e) {
-  if ($con && $con->inTransaction()) { $con->rollBack(); }
-
-  // MySQL: 1451 (FK constraint) o SQLSTATE 23000 => integridad referencial
-  $driverCode = $e->errorInfo[1] ?? null;   // p.ej. 1451
-  $sqlState   = $e->getCode();              // p.ej. 23000
-
-  if ($driverCode == 1451 || $sqlState === '23000') {
-    http_response_code(400);
-    $res['message'] = 'No se puede eliminar: el registro está referenciado por otros datos (recetas o movimientos).';
+    $con->commit();
+    $res = [
+      'success'=>true,
+      'action'=>'inactivated',
+      'message'=>'La medicina está referenciada. Se inactivó correctamente.'
+    ];
   } else {
-    http_response_code(500);
-    $res['message'] = 'Error de base de datos al eliminar.';
+    // 4b) Eliminar si no tiene referencias
+    // Borrar metadatos si existen
+    if ($hasTable($con,'medicamentos_meta')) {
+      $dmm = $con->prepare("DELETE FROM medicamentos_meta WHERE id_medicamento = :id_mm");
+      $dmm->execute([':id_mm'=>$id]);
+    }
+
+    $d = $con->prepare("DELETE FROM medicamentos WHERE id = :id_del");
+    $d->execute([':id_del'=>$id]);
+
+    $con->commit();
+    $res = [
+      'success'=>true,
+      'action'=>'deleted',
+      'message'=>'Medicina eliminada definitivamente.'
+    ];
   }
 
 } catch (Throwable $e) {
-  if ($con && $con->inTransaction()) { $con->rollBack(); }
-  if (http_response_code() < 300) { http_response_code(400); }
+  if ($con->inTransaction()) { $con->rollBack(); }
   $res['message'] = $e->getMessage();
 }
 
