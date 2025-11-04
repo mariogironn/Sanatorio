@@ -133,7 +133,7 @@ try {
           <table id="tblPac" class="table table-striped table-bordered">
             <thead>
               <tr>
-                <th>#</th>
+                <th>No serie</th>
                 <th>Paciente</th>
                 <th>Médico</th>
                 <th>Dosis</th>
