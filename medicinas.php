@@ -1,14 +1,9 @@
 <?php
 /**
  * Página de Inventario de Medicinas
- * 
- * Esta página muestra el inventario completo de medicinas, permite gestionar medicamentos,
- * recetar a pacientes y ver detalles completos de cada medicina.
- * 
+ *
  * @category Inventario
  * @package  Medicinas
- * @author   Sistema Hospitalario
- * @version  1.0
  */
 
 // Iniciar sesión si no está activa
@@ -18,9 +13,9 @@ require_once './common_service/common_functions.php';
 
 // Verificar autenticación del usuario
 $uid = (int)($_SESSION['user_id'] ?? 0);
-if ($uid <= 0) { 
-    header('Location: login.php'); 
-    exit; 
+if ($uid <= 0) {
+    header('Location: login.php');
+    exit;
 }
 
 /**
@@ -45,6 +40,12 @@ $userRoles = array_map(fn($r) => $r['rol'], $rStmt->fetchAll(PDO::FETCH_ASSOC));
 // Verificar si el usuario es personal médico
 $isMedStaff = (bool) array_intersect($userRoles, ['medico', 'doctor', 'enfermero', 'enfermera']);
 
+// Rol clínico a mostrar en el banner
+$rolClinico = '';
+foreach ($userRoles as $r) {
+    if (in_array($r, ['medico','doctor','enfermero','enfermera'], true)) { $rolClinico = $r; break; }
+}
+
 /**
  * Verificar permisos para crear medicinas y recetar
  */
@@ -66,6 +67,9 @@ if ($modIds) {
 }
 $canPrescribe = $isMedStaff && $canCreate;
 
+/** Texto de rol a mostrar en banner: clínico si existe; si no, el/los rol(es) real(es) del usuario */
+$rolTexto = $rolClinico ?: ( $userRoles ? implode(', ', $userRoles) : '—' );
+
 /**
  * Obtener inventario de medicinas con información adicional
  */
@@ -81,8 +85,8 @@ try {
          ORDER BY m.nombre_medicamento ASC
     ");
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) { 
-    $rows = []; 
+} catch (Throwable $e) {
+    $rows = [];
 }
 
 /**
@@ -158,8 +162,8 @@ try {
         FROM paciente_medicinas
         WHERE estado='activo'
     ")->fetchColumn();
-} catch (Throwable $e) { 
-    $pacientesActivosTotal = 0; 
+} catch (Throwable $e) {
+    $pacientesActivosTotal = 0;
 }
 
 try {
@@ -168,8 +172,8 @@ try {
         FROM paciente_medicinas
         WHERE DATE(fecha_asignacion) = CURDATE()
     ")->fetchColumn();
-} catch (Throwable $e) { 
-    $recetasHoy = 0; 
+} catch (Throwable $e) {
+    $recetasHoy = 0;
 }
 
 /**
@@ -197,8 +201,8 @@ try {
         $pacAct[$pid]['count']++;
         $pacAct[$pid]['items'][] = $r;
     }
-} catch (Throwable $e) { 
-    $pacAct = []; 
+} catch (Throwable $e) {
+    $pacAct = [];
 }
 ?>
 <!DOCTYPE html>
@@ -206,155 +210,43 @@ try {
 <head>
     <?php include './config/site_css_links.php'; ?>
     <?php include './config/data_tables_css.php'; ?>
-    <title>Inventario de Medicinas</title>
+    <title>Agregar Medicinas</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <style>
-        .metric {
-            min-height: 84px
-        }
+        .metric { min-height: 84px }
+        .actions { display: inline-flex; gap: .35rem }
+        .btn-icon { width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center }
+        .badge-pill { border-radius: 10rem; padding: .35rem .6rem; font-weight: 600 }
+        .recent-item { border-bottom: 1px solid #eee; padding: .5rem 0 }
+        .recent-item:last-child { border-bottom: none }
+        .recent-wrap { max-height: 310px; overflow-y: auto; padding-right: .25rem }
+        .recent-meta-right { text-align: right; min-width: 180px; }
+        .recent-role a { color: #17a2b8; font-weight: 600; }
 
-        .actions {
-            display: inline-flex;
-            gap: .35rem
-        }
+        .table-title { font-size: 1.25rem; font-weight: 600; color: #2c3e50; margin: 0; display: flex; align-items: center; gap: 8px }
+        .med-name { font-weight: 600; color: #2c3e50 }
+        .med-details { font-size: .85rem; color: #6c757d; margin-top: 4px }
+        .stock-info, .patients-info { text-align: center }
+        .stock-number { font-size: 1.25rem; font-weight: 700 }
+        .stock-normal { color: #28a745 }
+        .stock-warning { color: #dc3545 }
+        .stock-label, .patients-label { font-size: .8rem; color: #6c757d }
+        .patients-number { font-size: 1.05rem; font-weight: 600; color: #007bff }
 
-        .btn-icon {
-            width: 34px;
-            height: 34px;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center
-        }
+        .pac-card { border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 1rem; margin-bottom: 1rem; background: #f8f9fa; }
+        .pac-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .pac-badge { margin-left: auto; }
+        .pac-med { font-weight: 600; color: #495057; margin-bottom: 0.25rem; }
+        .pac-meta { color: #6c757d; font-size: 0.9rem; margin-bottom: 0.25rem; }
+        .pac-tag { background: #e9ecef; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; margin-left: 0.5rem; }
+        .pac-foot { font-size: 0.85rem; color: #6c757d; font-style: italic; }
 
-        .badge-pill {
-            border-radius: 10rem;
-            padding: .35rem .6rem;
-            font-weight: 600
+        /* Banner usuario/permiso */
+        .role-banner{
+            background: linear-gradient(90deg,#4e73df,#2e59d9);
+            color:#fff; border-radius:.25rem; padding:.75rem 1rem; margin-bottom:.75rem
         }
-
-        .recent-item {
-            border-bottom: 1px solid #eee;
-            padding: .5rem 0
-        }
-
-        .recent-item:last-child {
-            border-bottom: none
-        }
-
-        .recent-wrap {
-            max-height: 310px;
-            overflow-y: auto;
-            padding-right: .25rem
-        }
-
-        .recent-meta-right {
-            text-align: right;
-            min-width: 180px;
-        }
-
-        .recent-role a {
-            color: #17a2b8;
-            font-weight: 600;
-        }
-
-        /* Estilo de la maqueta */
-        .table-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: #2c3e50;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 8px
-        }
-
-        .med-name {
-            font-weight: 600;
-            color: #2c3e50
-        }
-
-        .med-details {
-            font-size: .85rem;
-            color: #6c757d;
-            margin-top: 4px
-        }
-
-        .stock-info,
-        .patients-info {
-            text-align: center
-        }
-
-        .stock-number {
-            font-size: 1.25rem;
-            font-weight: 700
-        }
-
-        .stock-normal {
-            color: #28a745
-        }
-
-        .stock-warning {
-            color: #dc3545
-        }
-
-        .stock-label,
-        .patients-label {
-            font-size: .8rem;
-            color: #6c757d
-        }
-
-        .patients-number {
-            font-size: 1.05rem;
-            font-weight: 600;
-            color: #007bff
-        }
-
-        /* Estilos para el modal de detalle */
-        .pac-card {
-            border: 1px solid #dee2e6;
-            border-radius: 0.25rem;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            background: #f8f9fa;
-        }
-
-        .pac-head {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .pac-badge {
-            margin-left: auto;
-        }
-
-        .pac-med {
-            font-weight: 600;
-            color: #495057;
-            margin-bottom: 0.25rem;
-        }
-
-        .pac-meta {
-            color: #6c757d;
-            font-size: 0.9rem;
-            margin-bottom: 0.25rem;
-        }
-
-        .pac-tag {
-            background: #e9ecef;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.8rem;
-            margin-left: 0.5rem;
-        }
-
-        .pac-foot {
-            font-size: 0.85rem;
-            color: #6c757d;
-            font-style: italic;
-        }
+        .role-banner .rb-name{font-weight:600}
     </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed layout-navbar-fixed">
@@ -382,6 +274,26 @@ try {
         </section>
 
         <section class="content">
+
+            <!-- Banner de usuario y permisos -->
+            <div class="role-banner d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="rb-name"><i class="fas fa-user"></i>
+                        <?= htmlspecialchars($user['nombre_mostrar']) ?></div>
+                    <small>Rol: <?= htmlspecialchars($rolTexto) ?><br>
+                    Usuario: <?= htmlspecialchars($user['usuario']) ?></small>
+                </div>
+                <div>
+                    <span>Permisos:
+                        <?php if ($canPrescribe): ?>
+                            <span class="badge badge-info">Recetar Medicinas</span>
+                        <?php else: ?>
+                            <span class="badge badge-light text-muted">Sin permiso para recetar</span>
+                        <?php endif; ?>
+                    </span>
+                </div>
+            </div>
+
             <!-- KPIs -->
             <div class="row">
                 <div class="col-lg-3 col-6">
@@ -442,8 +354,6 @@ try {
                             $lab = trim($r['laboratorio'] ?? '');
                             $prin = trim($r['principio_activo'] ?? ($r['nombre_generico'] ?? ''));
                             $tipo = (string)($r['tipo_medicamento'] ?? '');
-                            
-                            // Estado de la medicina (activo/inactivo)
                             $estado = (string)($r['estado'] ?? 'activo');
                             $inactiva = ($estado !== 'activo');
                             ?>
@@ -523,8 +433,7 @@ try {
                                         ?><br>
                                         <?php if (!empty($r['medico'])): ?>
                                             <small class="recent-role">
-                                                <?php if ($pref !== ''): echo $pref . ' ';
-                                                endif; ?>
+                                                <?php if ($pref !== ''): echo $pref . ' '; endif; ?>
                                                 <a href="usuarios.php?user=<?= (int)$r['medico_id'] ?>"><?= htmlspecialchars($r['medico']) ?></a>
                                             </small>
                                         <?php endif; ?>
@@ -765,80 +674,18 @@ try {
 <?php include './config/data_tables_js.php'; ?>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
 <script>
-    /**
-     * Variables globales
-     */
-    let dt = null; // DataTable principal
+    let dt = null;
+    function esc(s){return String(s||'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+    function setKpi(sel,delta){const n=v=>isNaN(v)?0:v;const g=s=>n(parseInt($(s).text(),10));const set=(s,v)=>$(s).text(v<0?0:v);set(sel,g(sel)+delta);}
+    function resetFormMed(){ $('#medicina_id').val('');$('#nombre_medicamento').val('');$('#principio_activo').val('');$('#presentacion').val('');$('#laboratorio').val('');$('#categoria').val('');$('#descripcion').val('');$('#stock_actual').val('0');$('#stock_minimo').val('10');}
 
-    /**
-     * Función para escapar strings HTML
-     * @param {string} s - String a escapar
-     * @returns {string} String escapado
-     */
-    function esc(s) {
-        return String(s || '').replace(/[&<>"']/g, m => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[m]));
-    }
-
-    /**
-     * Actualiza un KPI sumando un delta
-     * @param {string} sel - Selector del KPI
-     * @param {number} delta - Valor a sumar (puede ser negativo)
-     */
-    function setKpi(sel, delta) {
-        const n = (v) => isNaN(v) ? 0 : v;
-        const get = s => n(parseInt($(s).text(), 10));
-        const set = (s, v) => $(s).text(v < 0 ? 0 : v);
-        set(sel, get(sel) + delta);
-    }
-
-    /**
-     * Resetea el formulario de medicina
-     */
-    function resetFormMed() {
-        $('#medicina_id').val('');
-        $('#nombre_medicamento').val('');
-        $('#principio_activo').val('');
-        $('#presentacion').val('');
-        $('#laboratorio').val('');
-        $('#categoria').val('');
-        $('#descripcion').val('');
-        $('#stock_actual').val('0');
-        $('#stock_minimo').val('10');
-    }
-
-    /**
-     * Inicialización cuando el documento está listo
-     */
     $(function () {
-        /**
-         * Inicializar DataTable principal
-         */
         dt = $("#tblMed").DataTable({
-            responsive: true,
-            lengthChange: true,
-            autoWidth: false,
-            language: {
-                lengthMenu: "Mostrar _MENU_",
-                search: "Buscar:",
-                paginate: {
-                    first: "Primero",
-                    last: "Último",
-                    next: "Siguiente",
-                    previous: "Anterior"
-                },
-                zeroRecords: "Sin resultados",
-                info: "Mostrando _START_ a _END_ de _TOTAL_",
-                infoEmpty: "0 registros",
-                infoFiltered: "(filtrado de _MAX_)"
-            },
-            columnDefs: [{targets: -1, orderable: false}]
+            responsive:true,lengthChange:true,autoWidth:false,
+            language:{lengthMenu:"Mostrar _MENU_",search:"Buscar:",paginate:{first:"Primero",last:"Último",next:"Siguiente",previous:"Anterior"},zeroRecords:"Sin resultados",info:"Mostrando _START_ a _END_ de _TOTAL_",infoEmpty:"0 registros",infoFiltered:"(filtrado de _MAX_)"},
+            columnDefs:[{targets:-1,orderable:false}]
         });
 
-        /**
-         * Botón "Nueva Medicina"
-         */
         $('#btnNuevaMed').on('click', function () {
             resetFormMed();
             $('#tituloNuevaMed').html('<i class="fas fa-pills"></i> Nueva Medicina');
@@ -846,19 +693,11 @@ try {
             $('#modalNuevaMed').modal('show');
         });
 
-        /**
-         * Editar medicina existente
-         */
         $(document).on('click', '.btn-edit', function () {
             const id = $(this).data('id');
             $.getJSON('ajax/get_medicina.php', {id})
                 .done(function (r) {
-                    if (!r || !r.success) {
-                        Swal.fire('Aviso', r.message || 'No se pudo cargar', 'warning');
-                        return;
-                    }
-
-                    // Llenar formulario con datos existentes
+                    if (!r || !r.success) { Swal.fire('Aviso', r.message || 'No se pudo cargar', 'warning'); return; }
                     $('#medicina_id').val(r.data.id);
                     $('#nombre_medicamento').val(r.data.nombre_medicamento);
                     $('#principio_activo').val(r.data.principio_activo || '');
@@ -868,7 +707,6 @@ try {
                     $('#laboratorio').val(r.data.laboratorio || '');
                     $('#categoria').val(r.data.categoria || '');
                     $('#descripcion').val(r.data.descripcion || '');
-
                     $('#tituloNuevaMed').html('<i class="fas fa-edit"></i> Editar Medicina');
                     $('#btnGuardarMed').text('Guardar Cambios');
                     $('#modalNuevaMed').modal('show');
@@ -876,226 +714,117 @@ try {
                 .fail(x => Swal.fire('Error', x.responseText || 'Fallo al cargar', 'error'));
         });
 
-        /**
-         * VER DETALLES DE MEDICINA - IMPLEMENTACIÓN ACTUALIZADA
-         * Navegación directa a página de detalles en lugar de modal
-         * 
-         * @version 2.0 - Cambio de modal a navegación directa
-         */
+        // Ver detalle en página
         $(document).on('click', '.btn-view', function(){
             const id = $(this).data('id');
-            // Navegación directa a página de detalles
             window.location.href = 'ver_detalle_medicina.php?id=' + encodeURIComponent(id);
         });
 
-        /**
-         * Eliminar con fallback a inactivar
-         */
+        // Eliminar con fallback a inactivar
         $(document).on('click','.btn-delete',function(){
-            const $btn = $(this);
-            const id   = $btn.data('id');
-            const name = $btn.data('name');
-
-            Swal.fire({
-                title: 'Eliminar',
-                html: '¿Eliminar <b>'+name+'</b>?',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonText: 'Continuar',
-                confirmButtonColor: '#dc3545'
-            }).then(res=>{
+            const $btn=$(this); const id=$btn.data('id'); const name=$btn.data('name');
+            Swal.fire({title:'Eliminar',html:'¿Eliminar <b>'+name+'</b>?',icon:'question',showCancelButton:true,confirmButtonText:'Continuar',confirmButtonColor:'#dc3545'})
+            .then(res=>{
                 if(!res.isConfirmed) return;
-
-                $.post('ajax/eliminar_medicina.php', {id:id})
-                    .done(function(resp){
-                        try { resp = (typeof resp==='string') ? JSON.parse(resp) : resp; } catch(_){}
-                        if(resp && resp.success){
-                            const $row = $('#med-row-'+id);
-                            if (resp.mode === 'deleted') {
-                                // borrar fila de la tabla
-                                if ($.fn.dataTable && $.fn.dataTable.isDataTable('#tblMed')) {
-                                    dt.row($row).remove().draw(false);
-                                } else {
-                                    $row.remove();
-                                }
-                                Swal.fire('Eliminada', resp.message || '', 'success');
-                            } else {
-                                // Inactivada: actualizar fila sin recargar
-                                $row.find('.estado-badge')
-                                    .removeClass('badge-success').addClass('badge-secondary')
-                                    .text('Inactivo');
-                                $row.find('.btn-edit').prop('disabled', true).addClass('disabled');
-                                if ($row.find('.btn-activar').length===0) {
-                                    const activarBtn = '<button class="btn btn-success btn-sm btn-icon btn-activar" data-id="'+id+'" title="Activar"><i class="fa fa-undo"></i></button>';
-                                    $row.find('.actions').prepend(activarBtn);
-                                }
-                                Swal.fire('Inactivada', resp.message || '', 'info');
+                $.post('ajax/eliminar_medicina.php',{id:id})
+                .done(function(resp){
+                    try{resp=(typeof resp==='string')?JSON.parse(resp):resp;}catch(_){}
+                    if(resp&&resp.success){
+                        const $row=$('#med-row-'+id);
+                        if(resp.mode==='deleted'){
+                            if($.fn.dataTable&&$.fn.dataTable.isDataTable('#tblMed')){dt.row($row).remove().draw(false);} else {$row.remove();}
+                            Swal.fire('Eliminada', resp.message || '', 'success');
+                        }else{
+                            $row.find('.estado-badge').removeClass('badge-success').addClass('badge-secondary').text('Inactivo');
+                            $row.find('.btn-edit').prop('disabled',true).addClass('disabled');
+                            if($row.find('.btn-activar').length===0){
+                                const activarBtn='<button class="btn btn-success btn-sm btn-icon btn-activar" data-id="'+id+'" title="Activar"><i class="fa fa-undo"></i></button>';
+                                $row.find('.actions').prepend(activarBtn);
                             }
-                        } else {
-                            Swal.fire('Aviso', (resp && resp.message) || 'No se pudo completar la operación', 'warning');
+                            Swal.fire('Inactivada', resp.message || '', 'info');
                         }
-                    })
-                    .fail(x=> Swal.fire('Error', x.responseText || 'Fallo en servidor', 'error'));
-            });
-        });
-
-        /**
-         * Activar
-         */
-        $(document).on('click','.btn-activar',function(){
-            const id = $(this).data('id');
-            $.post('ajax/toggle_medicina_estado.php', {id:id, accion:'activar'})
-                .done(function(r){
-                    try { r = (typeof r==='string') ? JSON.parse(r) : r; } catch(_){}
-                    if (r && r.success && r.estado==='activo') {
-                        const $row = $('#med-row-'+id);
-                        $row.find('.estado-badge')
-                            .removeClass('badge-secondary').addClass('badge-success')
-                            .text('Disponible');
-                        $row.find('.btn-edit').prop('disabled', false).removeClass('disabled');
-                        $row.find('.btn-activar').remove();
-                        Swal.fire('Activada','La medicina se activó','success');
-                    } else {
-                        Swal.fire('Aviso', (r && r.message) || 'No se pudo activar', 'warning');
+                    }else{
+                        Swal.fire('Aviso', (resp&&resp.message)||'No se pudo completar la operación', 'warning');
                     }
                 })
                 .fail(x=> Swal.fire('Error', x.responseText || 'Fallo en servidor', 'error'));
+            });
         });
 
-        /**
-         * GUARDAR MEDICINA - ACTUALIZACIÓN EN VIVO
-         * Maneja el envío del formulario y actualiza la interfaz sin recargar
-         */
+        // Activar
+        $(document).on('click','.btn-activar',function(){
+            const id=$(this).data('id');
+            $.post('ajax/toggle_medicina_estado.php',{id:id,accion:'activar'})
+            .done(function(r){
+                try{r=(typeof r==='string')?JSON.parse(r):r;}catch(_){}
+                if(r&&r.success&&r.estado==='activo'){
+                    const $row=$('#med-row-'+id);
+                    $row.find('.estado-badge').removeClass('badge-secondary').addClass('badge-success').text('Disponible');
+                    $row.find('.btn-edit').prop('disabled',false).removeClass('disabled');
+                    $row.find('.btn-activar').remove();
+                    Swal.fire('Activada','La medicina se activó','success');
+                }else{
+                    Swal.fire('Aviso', (r&&r.message)||'No se pudo activar', 'warning');
+                }
+            })
+            .fail(x=> Swal.fire('Error', x.responseText || 'Fallo en servidor', 'error'));
+        });
+
+        // Guardar medicina
         $("#formNuevaMed").on('submit', function (e) {
             e.preventDefault();
-            const form = $(this);
-
+            const form=$(this);
             $.post('ajax/guardar_medicina_simple.php', form.serialize())
-                .done(function (resp) {
-                    let r;
-                    try {
-                        r = (typeof resp === 'string') ? JSON.parse(resp) : resp;
-                    } catch (_) {
-                        Swal.fire('Error', 'Respuesta inválida del servidor', 'error');
-                        return;
-                    }
+            .done(function (resp) {
+                let r; try{r=(typeof resp==='string')?JSON.parse(resp):resp;}catch(_){Swal.fire('Error','Respuesta inválida del servidor','error');return;}
+                if (!r.success){Swal.fire('Aviso', r.message || 'No se pudo guardar', 'warning'); return;}
+                const d=r.data||{}; const rowId='#med-row-'+r.id;
+                const isLow=(parseInt(d.stock_actual,10)||0) < (parseInt(d.stock_minimo,10)||0);
+                const pacientesActivos=parseInt(d.pacientes_activos,10)||0;
+                const estado=(d.estado||'activo'); const inactiva=(estado!=='activo');
 
-                    if (!r.success) {
-                        Swal.fire('Aviso', r.message || 'No se pudo guardar', 'warning');
-                        return;
-                    }
+                const medHtml='<div class="med-name">'+esc(d.nombre_medicamento)+'</div>' +
+                              '<div class="med-details">'+esc([d.principio_activo,d.presentacion,d.laboratorio].filter(Boolean).join(' · '))+'</div>';
+                const stockHtml='<div class="stock-number '+(isLow?'stock-warning':'stock-normal')+'">'+esc(d.stock_actual)+'</div><div class="stock-label">unidades</div>';
+                const patientsHtml='<div class="patients-number">'+pacientesActivos+'</div><div class="patients-label">pacientes activos</div>';
+                const estadoHtml='<span class="badge estado-badge '+(inactiva?'badge-secondary':'badge-success')+'">'+(inactiva?'Inactivo':'Disponible')+'</span>';
+                const accHtml='<div class="actions">'+
+                        '<button class="btn btn-info btn-sm btn-icon btn-view" data-id="'+r.id+'" title="Ver"><i class="fa fa-eye"></i></button>'+
+                        '<button class="btn btn-warning btn-sm btn-icon btn-edit" data-id="'+r.id+'" title="Editar" '+(inactiva?'disabled':'')+'><i class="fa fa-edit"></i></button>'+
+                        (inactiva?'<button class="btn btn-success btn-sm btn-icon btn-activar" data-id="'+r.id+'" title="Activar"><i class="fa fa-undo"></i></button>':'')+
+                        '<button class="btn btn-danger btn-sm btn-icon btn-delete" data-id="'+r.id+'" data-name="'+esc(d.nombre_medicamento)+'" data-stock="'+esc(d.stock_actual)+'" data-min="'+esc(d.stock_minimo)+'" data-tipo="'+esc(d.tipo_medicamento)+'" title="Eliminar"><i class="fa fa-trash"></i></button></div>';
 
-                    const d = r.data || {};
-                    const rowId = '#med-row-' + r.id;
-                    const isLow = (parseInt(d.stock_actual, 10) || 0) < (parseInt(d.stock_minimo, 10) || 0);
-                    const pacientesActivos = parseInt(d.pacientes_activos, 10) || 0;
-                    const estado = (d.estado || 'activo');
-                    const inactiva = (estado !== 'activo');
-
-                    // Generar HTML para la fila
-                    const medHtml = '<div class="med-name">' + esc(d.nombre_medicamento) + '</div>' +
-                        '<div class="med-details">' +
-                        esc([d.principio_activo, d.presentacion, d.laboratorio].filter(Boolean).join(' · ')) +
-                        '</div>';
-
-                    const stockHtml = '<div class="stock-number ' + (isLow ? 'stock-warning' : 'stock-normal') + '">' +
-                        esc(d.stock_actual) + '</div>' +
-                        '<div class="stock-label">unidades</div>';
-
-                    const patientsHtml = '<div class="patients-number">' + pacientesActivos + '</div>' +
-                        '<div class="patients-label">pacientes activos</div>';
-
-                    const estadoHtml = '<span class="badge estado-badge ' + (inactiva?'badge-secondary':'badge-success') + '">' +
-                        (inactiva?'Inactivo':'Disponible') + '</span>';
-
-                    const accHtml = '<div class="actions">' +
-                        '<button class="btn btn-info btn-sm btn-icon btn-view" data-id="' + r.id + '" title="Ver">' +
-                        '<i class="fa fa-eye"></i></button>' +
-                        '<button class="btn btn-warning btn-sm btn-icon btn-edit" data-id="' + r.id + '" title="Editar" ' + (inactiva?'disabled':'') + '>' +
-                        '<i class="fa fa-edit"></i></button>' +
-                        (inactiva ? '<button class="btn btn-success btn-sm btn-icon btn-activar" data-id="' + r.id + '" title="Activar"><i class="fa fa-undo"></i></button>' : '') +
-                        '<button class="btn btn-danger btn-sm btn-icon btn-delete" data-id="' + r.id +
-                        '" data-name="' + esc(d.nombre_medicamento) + '" data-stock="' + esc(d.stock_actual) +
-                        '" data-min="' + esc(d.stock_minimo) + '" data-tipo="' + esc(d.tipo_medicamento) + '" title="Eliminar">' +
-                        '<i class="fa fa-trash"></i></button></div>';
-
-                    if ($(rowId).length) {
-                        // ACTUALIZAR FILA EXISTENTE
-                        const $row = $(rowId);
-                        const wasLow = $row.data('isLow') === 1;
-
-                        // Actualizar contenido de las celdas
-                        dt.cell($row, 1).data(medHtml);
-                        dt.cell($row, 2).data(stockHtml);
-                        dt.cell($row, 3).data(patientsHtml);
-                        dt.cell($row, 4).data(estadoHtml);
-                        dt.cell($row, 5).data(accHtml);
-
-                        // Actualizar estado de stock bajo
-                        $row.data('isLow', isLow ? 1 : 0);
-
-                        // Actualizar KPI de stock bajo si cambió el estado
-                        if (wasLow !== isLow) {
-                            setKpi('#kpiBajo', isLow ? +1 : -1);
-                        }
-
-                        // Redibujar tabla
-                        dt.draw(false);
-                    } else {
-                        // AGREGAR NUEVA FILA
-                        const node = dt.row.add([
-                            r.id,
-                            medHtml,
-                            stockHtml,
-                            patientsHtml,
-                            estadoHtml,
-                            accHtml
-                        ]).draw(false).node();
-
-                        // Configurar atributos de la nueva fila
-                        $(node)
-                            .attr('id', 'med-row-' + r.id)
-                            .data('isLow', isLow ? 1 : 0);
-
-                        // Actualizar KPIs
-                        setKpi('#kpiTotal', +1);
-                        if (isLow) setKpi('#kpiBajo', +1);
-                    }
-
-                    // Cerrar modal y mostrar confirmación
-                    $('#modalNuevaMed').modal('hide');
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Guardado',
-                        toast: true,
-                        position: 'top-end',
-                        timer: 1200,
-                        showConfirmButton: false
-                    });
-                })
-                .fail(x => Swal.fire('Error', x.responseText || 'Fallo al guardar', 'error'));
+                if ($(rowId).length){
+                    const $row=$(rowId); const wasLow=$row.data('isLow')===1;
+                    dt.cell($row,1).data(medHtml);
+                    dt.cell($row,2).data(stockHtml);
+                    dt.cell($row,3).data(patientsHtml);
+                    dt.cell($row,4).data(estadoHtml);
+                    dt.cell($row,5).data(accHtml);
+                    $row.data('isLow', isLow?1:0);
+                    if (wasLow !== isLow) { setKpi('#kpiBajo', isLow ? +1 : -1); }
+                    dt.draw(false);
+                } else {
+                    const node=dt.row.add([ r.id, medHtml, stockHtml, patientsHtml, estadoHtml, accHtml ]).draw(false).node();
+                    $(node).attr('id','med-row-'+r.id).data('isLow', isLow?1:0);
+                    setKpi('#kpiTotal', +1); if (isLow) setKpi('#kpiBajo', +1);
+                }
+                $('#modalNuevaMed').modal('hide');
+                Swal.fire({icon:'success',title:'Guardado',toast:true,position:'top-end',timer:1200,showConfirmButton:false});
+            })
+            .fail(x => Swal.fire('Error', x.responseText || 'Fallo al guardar', 'error'));
         });
 
-        /**
-         * Guardar receta médica
-         */
+        // Guardar receta médica
         $("#formReceta").on('submit', function (e) {
             e.preventDefault();
             $.post('ajax/guardar_medicina_paciente.php', $(this).serialize())
-                .done(function (r) {
-                    try {
-                        r = JSON.parse(r);
-                    } catch (e) {
-                        r = {success: false, message: r};
-                    }
-                    if (r.success) {
-                        $("#modalReceta").modal('hide');
-                        Swal.fire('OK', 'Receta guardada', 'success').then(() => location.reload());
-                    } else {
-                        Swal.fire('Aviso', r.message || 'No se pudo guardar', 'warning');
-                    }
-                })
-                .fail(x => Swal.fire('Error', x.responseText || 'Fallo al guardar', 'error'));
+            .done(function (r) {
+                try{ r=JSON.parse(r);}catch(e){ r={success:false,message:r};}
+                if (r.success) { $("#modalReceta").modal('hide'); Swal.fire('OK','Receta guardada','success').then(()=>location.reload()); }
+                else { Swal.fire('Aviso', r.message || 'No se pudo guardar', 'warning'); }
+            })
+            .fail(x => Swal.fire('Error', x.responseText || 'Fallo al guardar', 'error'));
         });
     });
 </script>
