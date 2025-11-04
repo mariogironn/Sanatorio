@@ -1,54 +1,46 @@
 <?php
-// ver_detalle_medicina.php — Detalle imprimible de una medicina
+// ver_detalle_medicina.php
 if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
 require_once './config/connection.php';
 require_once './common_service/common_functions.php';
 
+$uid = (int)($_SESSION['user_id'] ?? 0);
+if ($uid <= 0) { header('Location: login.php'); exit; }
+
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) { header('Location: medicinas.php'); exit; }
 
-// ===== Medicina
+// --------- Cabecera de medicina (usa la VISTA correcta) ---------
 $med = null;
 try {
-  $stmt = $con->prepare("
-    SELECT m.*,
-           (SELECT COUNT(*) FROM paciente_medicinas pm
-             WHERE pm.medicina_id = m.id AND pm.estado = 'activo') AS pacientes_activos
-      FROM medicamentos m
-     WHERE m.id = :id
-     LIMIT 1
+  $st = $con->prepare("
+    SELECT  vm.med_id,
+            vm.nombre_medicamento, vm.nombre_generico, vm.principio_activo,
+            vm.concentracion, vm.tipo_medicamento,
+            vm.stock_actual, vm.stock_minimo,
+            vm.presentacion, vm.laboratorio, vm.categoria, vm.descripcion
+    FROM v_medicamentos_meta vm
+    WHERE vm.med_id = :id
+    LIMIT 1
   ");
-  $stmt->execute([':id'=>$id]);
-  $med = $stmt->fetch(PDO::FETCH_ASSOC);
+  $st->execute([':id'=>$id]);
+  $med = $st->fetch(PDO::FETCH_ASSOC);
 } catch (Throwable $e) { $med = null; }
 
-if (!$med) { header('Location: medicinas.php'); exit; }
-
-// ===== Pacientes que usan la medicina
-$rows = [];
+// --------- Pacientes que usan esta medicina (vista) ---------
+$pac = [];
 try {
-  $q = $con->prepare("
-    SELECT p.nombre AS paciente,
-           u.nombre_mostrar AS medico,
-           pm.dosis, pm.frecuencia, pm.motivo_prescripcion,
-           pm.duracion_tratamiento, pm.fecha_asignacion
-      FROM paciente_medicinas pm
-      JOIN pacientes p ON p.id_paciente = pm.paciente_id
- LEFT JOIN usuarios  u ON u.id = pm.usuario_id
-     WHERE pm.medicina_id = :id AND pm.estado = 'activo'
-  ORDER BY pm.fecha_asignacion DESC
+  $st = $con->prepare("
+    SELECT id, paciente, medico, dosis, frecuencia,
+           motivo_diagnostico, duracion, fecha
+    FROM v_medicamento_pacientes
+    WHERE med_id = :id
+    ORDER BY fecha DESC
   ");
-  $q->execute([':id'=>$id]);
-  $rows = $q->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) { $rows = []; }
+  $st->execute([':id'=>$id]);
+  $pac = $st->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { $pac = []; }
 
-// Helpers
-$nombre   = (string)$med['nombre_medicamento'];
-$generico = (string)($med['nombre_generico'] ?? '');
-$act      = (int)($med['stock_actual'] ?? 0);
-$min      = (int)($med['stock_minimo'] ?? 0);
-$tipo     = (string)($med['tipo_medicamento'] ?? 'no_controlado');
-$badgeTipo= $tipo === 'controlado' ? 'warning' : 'success'; // verde para no_controlado
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -59,9 +51,23 @@ $badgeTipo= $tipo === 'controlado' ? 'warning' : 'success'; // verde para no_con
   <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
   <title>Detalles de Medicina</title>
   <style>
-    .header-card{border-left:4px solid #007bff}
-    .kv-line{margin:.4rem 0;font-size:1.05rem}
-    .kv-line strong{min-width:180px;display:inline-block}
+    .info-box{border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem}
+    .pill{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.75rem;font-weight:600}
+    .pill--ok{background:#e6f4ea;color:#1e7e34}
+    .pill--warn{background:#fff3cd;color:#856404}
+    
+    /* Estilos para impresión */
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; }
+      .content-wrapper { margin: 0 !important; padding: 0 !important; }
+      .card { border: 1px solid #000 !important; box-shadow: none !important; }
+      .info-box { border: 1px solid #000 !important; }
+      .container-fluid { max-width: 100% !important; padding: 0 20px !important; }
+      .table { width: 100% !important; font-size: 12px !important; }
+      .card-body { padding: 15px !important; }
+      .badge, .pill { border: 1px solid #000 !important; }
+    }
   </style>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed layout-navbar-fixed">
@@ -73,13 +79,11 @@ $badgeTipo= $tipo === 'controlado' ? 'warning' : 'success'; // verde para no_con
       <div class="container-fluid d-flex justify-content-between align-items-center">
         <h1><i class="fas fa-info-circle"></i> Detalles de Medicina</h1>
         <div>
-          <a href="agregar_medicina.php?edit=<?= $id ?>" class="btn btn-warning btn-sm">
-            <i class="fas fa-edit"></i> Editar
-          </a>
-          <button class="btn btn-secondary btn-sm" onclick="window.print()">
-            <i class="fas fa-print"></i> Imprimir página
+          <!-- Solo botón de imprimir -->
+          <button class="btn btn-dark btn-sm no-print" onclick="window.print()">
+            <i class="fas fa-print"></i> Imprimir Todo
           </button>
-          <a href="medicinas.php" class="btn btn-outline-primary btn-sm">
+          <a href="medicinas.php" class="btn btn-secondary btn-sm no-print">
             <i class="fas fa-arrow-left"></i> Volver
           </a>
         </div>
@@ -87,50 +91,49 @@ $badgeTipo= $tipo === 'controlado' ? 'warning' : 'success'; // verde para no_con
     </section>
 
     <section class="content">
-      <!-- Encabezado -->
-      <div class="card header-card">
+      <div class="card card-outline card-primary">
         <div class="card-body">
-          <h5 class="mb-3">
-            <span class="badge badge-primary"><?= htmlspecialchars($nombre) ?></span>
-            <?php if ($generico): ?>
-              <small class="text-muted ml-2"><?= htmlspecialchars($generico) ?></small>
-            <?php endif; ?>
-          </h5>
-
-          <div class="kv-line">
-            <strong>Principio Activo:</strong>
-            <?= htmlspecialchars($med['principio_activo'] ?? '—') ?>
+        <?php if(!$med): ?>
+          <div class="alert alert-warning mb-0">No se encontró la medicina solicitada.</div>
+        <?php else: ?>
+          <div class="row">
+            <div class="col-md-12">
+              <span class="badge badge-primary">
+                <?= htmlspecialchars($med['nombre_medicamento']) ?>
+              </span>
+            </div>
           </div>
-
-          <div class="kv-line">
-            <strong>Stock Actual:</strong>
-            <?= $act ?> unidades
+          <br>
+          <div class="row info-box">
+            <div class="col-md-6">
+              <div><b>Principio Activo:</b> <?= htmlspecialchars($med['principio_activo'] ?: '—') ?></div>
+              <div><b>Presentación:</b> <?= htmlspecialchars($med['presentacion'] ?: '—') ?></div>
+              <div><b>Laboratorio:</b> <?= htmlspecialchars($med['laboratorio'] ?: '—') ?></div>
+            </div>
+            <div class="col-md-6">
+              <div><b>Disponible:</b> <?= (int)$med['stock_actual'] ?> unidades</div>
+              <div><b>Stock mínimo:</b> <?= (int)$med['stock_minimo'] ?></div>
+              <div><b>Pacientes Activos:</b> <?= count($pac) ?></div>
+              <div><b>Tipo:</b>
+                <span class="pill <?= ($med['tipo_medicamento']==='no_controlado'?'pill--ok':'pill--warn') ?>">
+                  <?= htmlspecialchars($med['tipo_medicamento']) ?>
+                </span>
+              </div>
+            </div>
           </div>
-
-          <div class="kv-line">
-            <strong>Stock Mínimo:</strong>
-            <?= $min ?> unidades
-          </div>
-
-          <div class="kv-line">
-            <strong>Tipo:</strong>
-            <span class="badge badge-<?= $badgeTipo ?>">
-              <?= $tipo === 'controlado' ? 'controlado' : 'no_controlado' ?>
-            </span>
-          </div>
+        <?php endif; ?>
         </div>
       </div>
 
-      <!-- Tabla de pacientes -->
-      <div class="card card-outline card-primary">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h3 class="card-title"><i class="fas fa-user-md"></i> Pacientes que usan esta medicina</h3>
+      <div class="card card-outline card-secondary">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fas fa-users"></i> Pacientes que usan esta medicina</h3>
         </div>
         <div class="card-body table-responsive">
           <table id="tblPac" class="table table-striped table-bordered">
-            <thead class="bg-light">
+            <thead>
               <tr>
-                <th class="text-center">#</th>
+                <th>#</th>
                 <th>Paciente</th>
                 <th>Médico</th>
                 <th>Dosis</th>
@@ -141,20 +144,28 @@ $badgeTipo= $tipo === 'controlado' ? 'warning' : 'success'; // verde para no_con
               </tr>
             </thead>
             <tbody>
-              <?php $i=0; foreach($rows as $r): $i++; ?>
+              <?php
+              $i=1;
+              foreach($pac as $r):
+                $ts = strtotime($r['fecha'] ?? '');
+                $fecha = $ts ? date('d/m/Y h:i a', $ts) : '—';
+              ?>
               <tr>
-                <td class="text-center"><?= $i ?></td>
+                <td><?= $i++ ?></td>
                 <td><?= htmlspecialchars($r['paciente']) ?></td>
-                <td><?= htmlspecialchars($r['medico'] ?? '—') ?></td>
+                <td><?= htmlspecialchars($r['medico']) ?></td>
                 <td><?= htmlspecialchars($r['dosis']) ?></td>
                 <td><?= htmlspecialchars($r['frecuencia']) ?></td>
-                <td><?= htmlspecialchars($r['motivo_prescripcion'] ?? '') ?></td>
-                <td><?= htmlspecialchars($r['duracion_tratamiento'] ?? '') ?></td>
-                <td><?= date('d/m/Y h:i a', strtotime($r['fecha_asignacion'])) ?></td>
+                <td><?= htmlspecialchars($r['motivo_diagnostico']) ?></td>
+                <td><?= htmlspecialchars($r['duracion']) ?></td>
+                <td><?= $fecha ?></td>
               </tr>
               <?php endforeach; ?>
             </tbody>
           </table>
+          <?php if (!$pac): ?>
+            <em>No hay pacientes registrados para esta medicina.</em>
+          <?php endif; ?>
         </div>
       </div>
     </section>
@@ -163,8 +174,8 @@ $badgeTipo= $tipo === 'controlado' ? 'warning' : 'success'; // verde para no_con
   <?php include './config/footer.php'; ?>
 </div>
 
-<?php include './config/site_js_links.php'; ?>
 <?php include './config/data_tables_js.php'; ?>
+<?php include './config/site_js_links.php'; ?>
 
 <!-- DataTables Buttons deps -->
 <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
@@ -177,27 +188,35 @@ $badgeTipo= $tipo === 'controlado' ? 'warning' : 'success'; // verde para no_con
 <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.colVis.min.js"></script>
 
 <script>
-  $(function(){
-    $('#tblPac').DataTable({
-      responsive:true,
-      dom:'<"row mb-2"<"col-md-6"l><"col-md-6 text-right"B>>rtip',
-      buttons:[
-        {extend:'copyHtml5', text:'Copiar',  className:'btn btn-sm btn-secondary'},
-        {extend:'csvHtml5',  text:'CSV',     className:'btn btn-sm btn-info'},
-        {extend:'excelHtml5',text:'Excel',   className:'btn btn-sm btn-success'},
-        {extend:'pdfHtml5',  text:'PDF',     className:'btn btn-sm btn-danger', orientation:'landscape', pageSize:'LETTER'},
-        {extend:'print',     text:'Imprimir',className:'btn btn-sm btn-dark'},
-        {extend:'colvis',    text:'Columnas',className:'btn btn-sm btn-warning'}
-      ],
-      language:{
-        sLengthMenu:"Mostrar _MENU_", sSearch:"Buscar:", sZeroRecords:"No se encontraron resultados",
-        sInfo:"Mostrando _START_ a _END_ de _TOTAL_", sInfoEmpty:"Mostrando 0 a 0 de 0",
-        sInfoFiltered:"(filtrado de _MAX_)",
-        oPaginate:{sFirst:"Primero",sLast:"Último",sNext:"Siguiente",sPrevious:"Anterior"}
-      },
-      order:[[7,'desc']]
-    });
+$(function(){
+  $("#tblPac").DataTable({
+    responsive: true,
+    dom: '<"row mb-2"<"col-md-6"l><"col-md-6 text-right"B>>rtip',
+    buttons: [
+      {extend:'copyHtml5', text:'Copiar', className:'btn btn-sm btn-secondary'},
+      {extend:'csvHtml5', text:'CSV', className:'btn btn-sm btn-info'},
+      {extend:'excelHtml5', text:'Excel', className:'btn btn-sm btn-success'},
+      {extend:'pdfHtml5', text:'PDF', className:'btn btn-sm btn-danger', orientation:'landscape', pageSize:'LETTER'},
+      {extend:'print', text:'Imprimir Tabla', className:'btn btn-sm btn-dark'},
+      {extend:'colvis', text:'Columnas', className:'btn btn-sm btn-warning'}
+    ],
+    language: {
+      sLengthMenu: "Mostrar _MENU_",
+      sSearch: "Buscar:",
+      sZeroRecords: "No se encontraron resultados",
+      sInfo: "Mostrando _START_ a _END_ de _TOTAL_",
+      sInfoEmpty: "Mostrando 0 a 0 de 0",
+      sInfoFiltered: "(filtrado de _MAX_)",
+      oPaginate: {
+        sFirst: "Primero",
+        sLast: "Último", 
+        sNext: "Siguiente",
+        sPrevious: "Anterior"
+      }
+    },
+    order: [[7, 'desc']]
   });
+});
 </script>
 </body>
 </html>
