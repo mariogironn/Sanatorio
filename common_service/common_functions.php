@@ -35,24 +35,10 @@ function getGender(string $gender = '', string $placeholder = 'Selecciona Géner
  */
 function getMedicamentos(PDO $con, int $id_medicamento = 0, bool $soloActivos = false): string
 {
-  // Ajusta el WHERE si manejas estado en tu DB (por defecto no se usa para no romper nada)
-  $sql = "SELECT `id`, `nombre_medicamento` FROM `medicamentos` "
-       . ($soloActivos ? "WHERE `estado` = 1 " : "")
-       . "ORDER BY `nombre_medicamento` ASC";
-
-  try {
-    $stmt = $con->prepare($sql);
-    $stmt->execute();
-  } catch (PDOException $ex) {
-    return '<option value="">(Error cargando medicinas)</option>';
-  }
-
-  $html = '<option value="">' . htmlspecialchars('Selecciona Medicina', ENT_QUOTES, 'UTF-8') . '</option>';
-  while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    $id   = (int)$row['id'];
-    $name = htmlspecialchars((string)$row['nombre_medicamento'], ENT_QUOTES, 'UTF-8');
-    $sel  = ($id_medicamento === $id) ? ' selected="selected"' : '';
-    $html .= '<option value="' . $id . '"' . $sel . '>' . $name . '</option>';
+  $html = '<option value="">Seleccionar Medicina...</option>';
+  $q = $con->query("SELECT id, nombre_medicamento FROM medicamentos WHERE estado='activo' ORDER BY nombre_medicamento ASC");
+  while($r = $q->fetch(PDO::FETCH_ASSOC)){
+    $html .= '<option value="'.$r['id'].'">'.htmlspecialchars($r['nombre_medicamento']).'</option>';
   }
   return $html;
 }
