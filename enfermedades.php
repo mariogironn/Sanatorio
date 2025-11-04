@@ -521,8 +521,8 @@ $(function(){
     order:[[0,'asc']],
     dom:'Bfrtip',
     buttons:[
-      {extend:'pdfHtml5',  className:'buttons-pdf',  title:'Catálogo de Enfermedades', exportOptions:{columns:':not(.no-export)'}},
-      {extend:'print',     className:'buttons-print',title:'Catálogo de Enfermedades', exportOptions:{columns:':not(.no-export)'}}
+      {extend:'pdfHtml5',  className:'buttons-pdf',  title:'Lista de Enfermedades', exportOptions:{columns:':not(.no-export)'}},
+      {extend:'print',     className:'buttons-print',title:'Lista de Enfermedades', exportOptions:{columns:':not(.no-export)'}}
     ],
     language:{ url:'https://cdn.datatables.net/plug-ins/1.13.8/i18n/es-ES.json' }
   });
