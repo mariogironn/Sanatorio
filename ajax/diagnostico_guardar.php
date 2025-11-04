@@ -9,9 +9,9 @@ require_once __DIR__ . '/../config/connection.php';
 /* === Conexión PDO robusta === */
 $pdo = null;
 try {
-  if (isset($con) && $con instanceof PDO)        { $pdo = $con; }
-  elseif (isset($conexion) && $conexion instanceof PDO) { $pdo = $conexion; }
-  elseif (function_exists('get_db'))             { $pdo = get_db(); }
+  if (isset($con) && $con instanceof PDO)              { $pdo = $con; }
+  elseif (isset($conexion) && $conexion instanceof PDO){ $pdo = $conexion; }
+  elseif (function_exists('get_db'))                   { $pdo = get_db(); }
   else {
     $pdo = new PDO('mysql:host=localhost;dbname=la_esperanza;charset=utf8','root','',[
       PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
@@ -23,10 +23,15 @@ try {
 }
 
 /* === Inputs === */
-$id            = (int)($_POST['id_diagnostico'] ?? 0);
+$id = (int)(
+  $_POST['id'] ??
+  $_POST['id_diagnostico'] ??
+  $_POST['diagnostico_id'] ??
+  $_POST['iddx'] ?? 0
+);
 $id_paciente   = (int)($_POST['id_paciente'] ?? 0);
 $id_enfermedad = (int)($_POST['id_enfermedad'] ?? 0);
-$id_medico     = (int)($_POST['id_medico'] ?? 0); // <-- id de la tabla MEDICOS
+$id_medico     = (int)($_POST['id_medico'] ?? 0); // id de tabla medicos
 $sintomas      = trim($_POST['sintomas'] ?? '');
 $observaciones = trim($_POST['observaciones'] ?? '');
 $gravedad      = $_POST['gravedad'] ?? 'Leve';
@@ -46,9 +51,9 @@ try {
   if ($id > 0) {
     // UPDATE
     $sql = "UPDATE diagnosticos
-              SET id_paciente=?, id_enfermedad=?, id_medico=?,
-                  sintomas=?, observaciones=?, gravedad=?, fecha=?
-            WHERE id_diagnostico=?";
+               SET id_paciente=?, id_enfermedad=?, id_medico=?,
+                   sintomas=?, observaciones=?, gravedad=?, fecha=?
+             WHERE id=?";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
       $id_paciente, $id_enfermedad, $id_medico,
@@ -56,7 +61,7 @@ try {
       $id
     ]);
   } else {
-    // INSERT (sin created_by porque no existe en la tabla)
+    // INSERT
     $sql = "INSERT INTO diagnosticos
               (id_paciente, id_enfermedad, id_medico, sintomas, observaciones, gravedad, fecha)
             VALUES (?,?,?,?,?,?,?)";
