@@ -17,7 +17,13 @@ if (isset($_POST['login'])) {
   $userName = trim($_POST['user_name'] ?? '');
   $password = $_POST['password'] ?? '';
 
-  if ($userName === '' || $password === '') {
+  // Incluir función de verificación reCAPTCHA
+  require_once __DIR__ . '/common_service/common_functions.php';
+
+  // Verificar reCAPTCHA antes de validar usuario/contraseña
+  if (!recaptcha_valido()) {
+    $message = 'Por favor marca "No soy un robot".';
+  } else if ($userName === '' || $password === '') {
     $message = 'Usuario y contraseña son obligatorios.';
   } else {
     $sqlUser = "SELECT id, nombre_mostrar, usuario, imagen_perfil, estado, contrasena
@@ -436,6 +442,13 @@ if (isset($_POST['login'])) {
       font-weight: 600;
     }
 
+    /* Estilos para el widget de reCAPTCHA */
+    .g-recaptcha {
+      margin: 15px 0 20px 0;
+      display: flex;
+      justify-content: center;
+    }
+
     @media (max-width: 480px) {
       .login-container {
         max-width: 100%;
@@ -450,7 +463,7 @@ if (isset($_POST['login'])) {
       }
       
       .login-header h1 {
-        fontSize: 1.4rem;
+        font-size: 1.4rem;
       }
       
       .logo-container {
@@ -469,6 +482,12 @@ if (isset($_POST['login'])) {
       
       .heart-beat {
         font-size: 1.1rem;
+      }
+
+      /* Ajustes para reCAPTCHA en móviles */
+      .g-recaptcha {
+        transform: scale(0.85);
+        transform-origin: center;
       }
     }
 
@@ -549,6 +568,9 @@ if (isset($_POST['login'])) {
           </div>
         </div>
 
+        <!-- Widget de reCAPTCHA -->
+        <div class="g-recaptcha" data-sitekey="6LdE1QIsAAAAALTyY3X1432idvTHbKF5VJFPkcsw"></div>
+
         <!-- Mensaje de error -->
         <?php if ($message !== ''): ?>
           <div class="message message-error">
@@ -586,6 +608,9 @@ if (isset($_POST['login'])) {
       </div>
     </div>
   </div>
+
+  <!-- Script de reCAPTCHA -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 
   <script>
     // Mostrar/ocultar contraseña
