@@ -2,6 +2,8 @@
 // auth/olvido.php
 if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
 require_once __DIR__ . '/../config/connection.php';
+// Incluir función de verificación reCAPTCHA
+require_once __DIR__ . '/../common_service/common_functions.php';
 
 const DEBUG_SHOW_LINK   = true;
 const RESET_TOKEN_TTL   = 120;
@@ -16,43 +18,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $ident = trim($_POST['usuario'] ?? '');
   $usuario = $ident;
 
-  $st = $con->prepare("SELECT id FROM usuarios WHERE usuario = :u LIMIT 1");
-  $st->execute([':u' => $ident]);
-  $user = $st->fetch(PDO::FETCH_ASSOC);
+  // Verificar reCAPTCHA antes de procesar la solicitud
+  if (!recaptcha_valido()) {
+    $msg = 'Confirma reCAPTCHA antes de continuar.';
+  } else {
+    $st = $con->prepare("SELECT id FROM usuarios WHERE usuario = :u LIMIT 1");
+    $st->execute([':u' => $ident]);
+    $user = $st->fetch(PDO::FETCH_ASSOC);
 
-  $msg = "Si la cuenta existe, se ha enviado un enlace para restablecer la contraseña.";
+    $msg = "Si la cuenta existe, se ha enviado un enlace para restablecer la contraseña.";
 
-  if ($user) {
-    $con->prepare("DELETE FROM reset_password_tokens WHERE id_usuario = :id AND usado_en IS NULL")
-        ->execute([':id' => (int)$user['id']]);
+    if ($user) {
+      $con->prepare("DELETE FROM reset_password_tokens WHERE id_usuario = :id AND usado_en IS NULL")
+          ->execute([':id' => (int)$user['id']]);
 
-    $token     = bin2hex(random_bytes(32));
-    $hash      = hash('sha256', $token);
-    $expiresAt = time() + RESET_TOKEN_TTL;
-    $expiraDT  = date('Y-m-d H:i:s', $expiresAt);
+      $token     = bin2hex(random_bytes(32));
+      $hash      = hash('sha256', $token);
+      $expiresAt = time() + RESET_TOKEN_TTL;
+      $expiraDT  = date('Y-m-d H:i:s', $expiresAt);
 
-    $ins = $con->prepare("
-      INSERT INTO reset_password_tokens
-        (id_usuario, token_hash, creado_en, expira_en, ip, user_agent)
-      VALUES
-        (:id, :h, NOW(), :exp, :ip, :ua)
-    ");
-    $ins->execute([
-      ':id'  => (int)$user['id'],
-      ':h'   => $hash,
-      ':exp' => $expiraDT,
-      ':ip'  => $_SERVER['REMOTE_ADDR'] ?? null,
-      ':ua'  => $_SERVER['HTTP_USER_AGENT'] ?? null
-    ]);
+      $ins = $con->prepare("
+        INSERT INTO reset_password_tokens
+          (id_usuario, token_hash, creado_en, expira_en, ip, user_agent)
+        VALUES
+          (:id, :h, NOW(), :exp, :ip, :ua)
+      ");
+      $ins->execute([
+        ':id'  => (int)$user['id'],
+        ':h'   => $hash,
+        ':exp' => $expiraDT,
+        ':ip'  => $_SERVER['REMOTE_ADDR'] ?? null,
+        ':ua'  => $_SERVER['HTTP_USER_AGENT'] ?? null
+      ]);
 
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $base   = rtrim($scheme.'://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']), '/');
-    $link   = $base . '/restablecer.php?token=' . $token;
+      $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+      $base   = rtrim($scheme.'://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']), '/');
+      $link   = $base . '/restablecer.php?token=' . $token;
 
-    if (DEBUG_SHOW_LINK) {
-      $showLink      = true;
-      $linkToShow    = $link;
-      $expiresInSecs = max(0, $expiresAt - time());
+      if (DEBUG_SHOW_LINK) {
+        $showLink      = true;
+        $linkToShow    = $link;
+        $expiresInSecs = max(0, $expiresAt - time());
+      }
     }
   }
 }
@@ -86,13 +93,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .btn-secondary:hover { background-color: #e9ecef; }
     .status-message { padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 0.95rem; }
     .status-info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    .status-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     .link-section { margin-top: 25px; padding: 20px; background-color: #f8f9fa; border-radius: 10px; text-align: center; }
     .link-section h3 { margin-bottom: 12px; color: #333; display: flex; align-items: center; justify-content: center; gap: 8px; }
     .reset-link { display: inline-block; background: linear-gradient(to right, #4a00e0, #8e2de2); color: white; padding: 12px 25px; border-radius: 25px; text-decoration: none; font-weight: 600; margin: 15px 0; transition: all 0.3s; }
     .reset-link:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(74, 0, 224, 0.3); }
     .timer { font-size: 0.9rem; color: #666; margin-top: 10px; }
     .disabled { pointer-events: none; opacity: 0.5; background: #6c757d !important; }
-    @media (max-width: 480px) { .container { max-width: 100%; } .body { padding: 20px; } }
+    
+    /* Estilos para el widget de reCAPTCHA */
+    .g-recaptcha { 
+      margin: 15px 0 20px 0; 
+      display: flex; 
+      justify-content: center; 
+    }
+    
+    @media (max-width: 480px) { 
+      .container { max-width: 100%; } 
+      .body { padding: 20px; } 
+      /* Ajustes para reCAPTCHA en móviles */
+      .g-recaptcha {
+        transform: scale(0.85);
+        transform-origin: center;
+      }
+    }
   </style>
 </head>
 <body>
@@ -115,6 +139,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
           </div>
           
+          <!-- Widget de reCAPTCHA, y añadir clave de sitekey propia generada por google -->          
+          <div class="g-recaptcha" data-sitekey="TU_SITE_KEY_AQUI"></div> 
+          
+          <!-- Mensaje de error -->
+          <?php if ($msg !== ''): ?>
+            <div class="status-message <?= ($msg === 'Confirma reCAPTCHA antes de continuar.') ? 'status-error' : 'status-info' ?>">
+              <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($msg) ?>
+            </div>
+          <?php endif; ?>
+
           <button type="submit" class="btn btn-primary">
             <i class="fas fa-paper-plane"></i> Enviar enlace
           </button>
@@ -169,5 +203,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     <?php endif; ?>
   </div>
+
+  <!-- Script de reCAPTCHA -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </body>
 </html>
