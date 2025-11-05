@@ -1,0 +1,7 @@
+# Este archivo indica a Git qué archivos deben ignorarse (no subirse al repositorio).
+# En este caso, evitamos subir las llaves privadas de reCAPTCHA por motivos de seguridad.
+# Cada usuario que clone el proyecto debe crear manualmente su propio config/recaptcha.php.
+# Ejemplo: copiar recaptcha.example.php -> recaptcha.php y agregar sus propias llaves.
+
+ /config/recaptcha.php
+
