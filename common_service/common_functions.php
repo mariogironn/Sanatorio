@@ -6,6 +6,12 @@
  */
 
 /**
+ * Cargar llaves de reCAPTCHA.
+ * Ruta relativa desde /common_service a /config/recaptcha.php
+ */
+require_once __DIR__ . '/../config/recaptcha.php';
+
+/**
  * Genera opciones <option> para Género.
  *
  * @param string $gender        Valor seleccionado (Masculino/Femenino/Otro)
@@ -103,4 +109,38 @@ function getDateTextBox(string $label, string $dateId, bool $required = true, st
       </div>
     </div>
   </div>';
+}
+
+/**
+ * Verifica si el reCAPTCHA enviado por el usuario es válido.
+ *
+ * @return bool True si el reCAPTCHA es válido, false en caso contrario
+ */
+function recaptcha_valido(): bool {
+  if (empty($_POST['g-recaptcha-response'])) {
+    return false;
+  }
+
+  $token  = $_POST['g-recaptcha-response'];
+  $secret = RECAPTCHA_SECRET_KEY;
+
+  $ch = curl_init('https://www.google.com/recaptcha/api/siteverify');
+  curl_setopt_array($ch, [
+    CURLOPT_POST           => true,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POSTFIELDS     => http_build_query([
+      'secret'   => $secret,
+      'response' => $token,
+      'remoteip' => $_SERVER['REMOTE_ADDR'] ?? '',
+    ]),
+    CURLOPT_TIMEOUT        => 10,
+  ]);
+
+  $resp = curl_exec($ch);
+  curl_close($ch);
+
+  if (!$resp) { return false; }
+
+  $json = json_decode($resp, true);
+  return isset($json['success']) && $json['success'] === true;
 }
