@@ -568,8 +568,8 @@ if (isset($_POST['login'])) {
           </div>
         </div>
 
-        <!-- Widget de reCAPTCHA -->
-        <div class="g-recaptcha" data-sitekey="6LdE1QIsAAAAALTyY3X1432idvTHbKF5VJFPkcsw"></div>
+        <!-- Widget de reCAPTCHA poner clave de sitio web --> 
+        <div class="g-recaptcha" data-sitekey="sitekey"></div>
 
         <!-- Mensaje de error -->
         <?php if ($message !== ''): ?>
